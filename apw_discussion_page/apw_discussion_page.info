@@ -1,0 +1,5 @@
+; $Id$
+name = Discussion Page
+description = Module that is delegated with managing the discussion page
+package = APW Package
+core = 6.x

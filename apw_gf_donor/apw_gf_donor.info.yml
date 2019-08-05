@@ -1,0 +1,5 @@
+; $Id$
+name = APW GF Donor
+description = Module delegated with the presentation of data for pledges and contribution of GF donors.
+package = APW Package
+core = 8.x

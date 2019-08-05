@@ -1,0 +1,472 @@
+<?php
+
+include_once 'DonorUtilService.class.php';
+
+// $Id$
+/**
+ * @file
+ * Processes Blog content type
+ */
+function apw_gf_donor_menu() {
+    $items['donor/%/%'] = array(
+        'page callback' => '_individual_donor_page',
+        'page arguments' => array(1, 2),
+        'access callback' => TRUE,
+        'type' => MENU_CALLBACK,
+    );
+    $items['pledge_contribution_chart'] = array(
+        'page callback' => '_pledge_contribution_chart',
+        'page arguments' => array(1),
+        'access callback' => TRUE,
+        'type' => MENU_CALLBACK,
+    );
+
+    return $items;
+}
+
+function apw_gf_donor_theme() {
+    return array(
+        'pledge_contribution_chart_theme' => array('variables' => NULL),
+	'individual_donor_introduction' => array('variables' => NULL),
+        'gf_donor_score_year_selector' => array('variables' => array('target_year_id' => NULL)),
+    );
+}
+
+function apw_gf_donor_node_view($node, $view_mode, $langcode) {
+
+    if('full' === $view_mode) {
+        if (1946 == $node->nid ||
+                3044 == $node->nid ||
+                3045 == $node->nid ||
+                3046 == $node->nid) {        
+            apw_gf_donor_score_custom_node_render($node);
+        }
+                
+        if (1945 == $node->nid ||
+                2223 == $node->nid ||
+                3042 == $node->nid ||
+                3043 == $node->nid) {
+            apw_gf_donor_pledger_and_contribution_custom_node_render($node);
+        }
+    }
+}
+
+function apw_gf_donor_pledger_and_contribution_custom_node_render($node) {
+            //first get the different donor groupings
+
+            if(array_key_exists('ty', $_GET)) {
+                $target_year_id = $_GET['ty'];                
+            } else {
+                $target_year_id = 14;
+            }
+
+            $year_name = db_query("SELECT year FROM target_year WHERE id = :yr_id" , array(':yr_id' => $target_year_id))->fetchField();
+	    if(empty($year_name)) {
+		    $target_year_id = 14;
+		    $year_name = 2015;
+	    }
+	    $donors = _retrieve_all_donor('country', $target_year_id); 
+	    
+            $header = array(
+                array('data' => '', 'width' => '5%', 'rowspan' => 2),
+                array('data' => '', 'width' => '14%', 'rowspan' => 2),
+                array('data' => t('From 2002 - 2013'), 'colspan' => 4, 'rowspan' => 2, 'class' => 'apw-center-text'),
+                array('data' => '', 'width' => '3%', 'rowspan' => 2, 'class' => 'apw-blank-col'),
+                array('data' => t('From 2014 - 2016'), 'colspan' => 4, 'rowspan' => 2, 'class' => 'apw-center-text'),
+                array('data' => '', 'width' => '3%', 'rowspan' => 2, 'class' => 'apw-blank-col'),
+                array('data' => t('Cumulative (2002 - 2016)'), 'colspan' => 2, 'rowspan' => 2, 'class' => 'apw-center-text'),
+                    );
+            
+            $countries_text = theme('table', array('header' => $header, 'rows' => $donors, 'attributes' => array('class' => array('apw_gf_donor_grid')), 'caption' => t('Table 1:  Pledges and Contributions to the Global Fund from Country Donors')));
+
+            $node->content['country_section'] = array (
+                  '#markup' => $countries_text,
+                  '#weight' => 1,
+                );
+            
+            $donors = _retrieve_all_donor("org', 'other");
+
+            $header = array(
+	        array('data' => ' ', 'width' => '40%', 'rowspan' => 2),
+                array('data' => t('From 2002 - 2013'), 'colspan' => 4, 'rowspan' => 2, 'class' => 'apw-center-text'),
+                array('data' => '', 'width' => '5%', 'rowspan' => 2, 'class' => 'apw-blank-col'),
+                array('data' => t('From 2014 - 2016'), 'colspan' => 4, 'rowspan' => 2, 'class' => 'apw-center-text'),
+                array('data' => '', 'width' => '3%', 'rowspan' => 2, 'class' => 'apw-blank-col'),
+                array('data' => t('Cumulative (2002 - 2016)'), 'colspan' => 2, 'rowspan' => 2, 'class' => 'apw-center-text'),
+                    );
+            
+            $orgs_text = theme('table', array('header' => $header, 'rows' => $donors, 'attributes' => array('class' => array('apw_gf_donor_grid')), 'caption' => t('Table 2: Pledges and Contributions to the Global Fund from Private Donors (Foundations, Companies and others)'))); 
+
+            $node->content['orgs_section'] = array (
+                  '#markup' => $orgs_text,
+                  '#weight' => 2,
+                );
+            
+            $donors = _retrieve_all_donor('unf');
+
+            $header = array(
+                array('data' => ' ', 'width' => '40%', 'rowspan' => 2),
+                array('data' => t('From 2002 - 2013'), 'colspan' => 4, 'rowspan' => 2, 'class' => 'apw-center-text'),
+                array('data' => '', 'width' => '5%', 'rowspan' => 2, 'class' => 'apw-blank-col'),
+                array('data' => t('From 2014 - 2016'), 'colspan' => 4, 'rowspan' => 2, 'class' => 'apw-center-text'),
+                array('data' => '', 'width' => '3%', 'rowspan' => 2, 'class' => 'apw-blank-col'),
+                array('data' => t('Cumulative (2002 - 2016)'), 'colspan' => 2, 'rowspan' => 2, 'class' => 'apw-center-text'),
+                    );
+            
+            $unf_text = theme('table', array('header' => $header, 'rows' => $donors, 'attributes' =>  array('class' => array('apw_gf_donor_grid')), 'caption' => t('Table 3: Donations from the United Nations Foundation and its donors')));
+
+            $node->content['unf_section'] = array (
+                  '#markup' => $unf_text,
+                  '#weight' => 3,
+                );
+            
+            $node->content['disease_section'] = array (
+                  '#markup' => get_notes(0),
+                  '#weight' => 4,
+                );
+}
+
+function apw_gf_donor_score_custom_node_render($node) {
+	//this is the donor score page
+            $target_year_id = $_GET['ty'];
+            if(empty($target_year_id)) {
+                $target_year_id = 13;
+            }
+
+            $year_name = db_query("SELECT year FROM target_year WHERE id = :year_id" , array('year_id' => $target_year_id))->fetchField();;
+	    
+            if(empty($year_name)) {
+		    $target_year_id = 13;
+		    $year_name = 2014;
+	    }
+
+	    $donor_service = new DonorUtilService();
+	    $donors = $donor_service->donor_score_listing($target_year_id);
+
+	    $headers = array();
+	
+            $headers[] = array('data' => '', 'header' => true);
+	    $headers[] = array('data' => 'Country', 'header' => true);
+		$headers[] = array('data' => 'Economic classification', 'class' => 'apw-center-text');
+		$headers[] = array('data' => 'Contribution ($)', 'class' => 'apw-numeric');
+		$headers[] = array('data' => 'GNI ($)', 'class' => 'apw-numeric');
+		$headers[] = array('data' => 'Contribution as % of GNI', 'class' => 'apw-numeric');
+		$headers[] = array('data' => 'Donor score', 'class' => 'apw-center-text');
+		
+            $donor_listing = theme('table', array('header' => $headers, 'rows' => $donors, 'attributes' => array('class' => array('apw_gf_donor_grid')), 'caption' => t('Countries')));
+
+            $node->content['donor_score_section'] = array (
+                  '#markup' => theme('gf_donor_score_year_selector', array('target_year_id' => $target_year_id)) . $donor_listing,
+                  '#weight' => 1,
+                );
+}
+
+function get_notes($donor_id, $include_id = -2) {
+	$sql = "SELECT note FROM donor_footnote WHERE donor_id = " . $donor_id . " OR donor_id = " . $include_id;
+
+	$result = db_query($sql);
+
+	if($result) {
+		$note_txt = '<p><strong><u>' . t('Notes') . '</u></strong></p>';
+		$note_txt .= '<ul>';
+		
+		foreach($result as $data) {
+			$note_txt .= '<li style="font-size: 90%"><i>' . t($data->note) . '</i></li>';
+		}
+		
+		$note_txt .= '</ul>';
+	}
+	
+	return $note_txt;
+}
+
+function _retrieve_all_donor($donor_type, $target_year_id = 11) {
+
+    $early_funding_years = array(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);
+    $late_funding_years = array(13, 14, 15, 16);
+    
+    $donors = array();
+    $donor_service = new DonorUtilService();
+
+    $header = array();
+
+    if('country' == $donor_type) {
+        $header[] = array('data' => '', 'header' => true);
+    }
+
+    $header[] = array('data' => '', 'header' => true);
+    $header[] = array('data' => t('Pledge'), 'header' => true, 'class' => 'apw-numeric');
+    $header[] = array('data' => t('As % of all pledges'), 'header' => true, 'class' => 'apw-numeric');
+    $header[] = array('data' => t('Contribution'), 'header' => true, 'class' => 'apw-numeric');
+    $header[] = array('data' => t('Contribution as % of pledge'), 'header' => true, 'class' => 'apw-numeric');
+    $header[] = array('data' => '', 'header' => true, 'class' => 'apw-blank-col');
+    $header[] = array('data' => t('Pledge'), 'header' => true, 'class' => 'apw-numeric');
+    $header[] = array('data' => t('As % of all pledges'), 'header' => true, 'class' => 'apw-numeric');
+    $header[] = array('data' => t('Contribution'), 'header' => true, 'class' => 'apw-numeric');
+    $header[] = array('data' => t('Contribution as % of pledge'), 'header' => true, 'class' => 'apw-numeric');
+    $header[] = array('data' => '', 'header' => true, 'class' => 'apw-blank-col');
+    $header[] = array('data' => t('Pledge'), 'header' => true, 'class' => 'apw-numeric');
+    $header[] = array('data' => t('Contribution'), 'header' => true, 'class' => 'apw-numeric');
+
+    $donors[] = $header;
+
+    $total_pledge = db_query('SELECT SUM(amount_in_usd) FROM pledge p')->fetchField();
+    $total_early_pledge = db_query("SELECT SUM(amount_in_usd) FROM pledge p WHERE target_year_id IN (" . implode(",", $early_funding_years) . ")")->fetchField();
+    $total_late_pledge = db_query("SELECT SUM(amount_in_usd) FROM pledge p WHERE target_year_id IN (" . implode(",", $late_funding_years) . ")")->fetchField();
+    
+    $sql = "SELECT d.id, d.name, SUM(p.amount_in_usd) pledge_amount, flag_path
+FROM pledge p
+INNER JOIN donor d ON p.donor_id = d.id
+WHERE d.donor_type IN ('" . $donor_type . "')
+GROUP BY d.name
+ORDER BY pledge_amount DESC";
+
+    $result = db_query($sql);
+
+    foreach($result as $data) {
+        $row = array();
+
+        if ('country' == $donor_type) {
+            $row[] = array('data' => '<img width="40" src='  . base_path() . path_to_theme() . '/images/flags/' . $data->flag_path . '>');
+        }
+
+        $row[] = array('data' => l($data->name, 'donor/' . md5($data->id) . '/c'));
+        
+        //get the pledges and contribution from 2001/2 to 2013
+        $early_pledge = db_query("SELECT SUM(p.amount_in_usd) pledge_amount
+FROM pledge p
+WHERE target_year_id IN (" . implode(",", $early_funding_years) . ") AND p.donor_id = " . $data->id)->fetchField();
+
+        $row[] = array('data' => number_format($early_pledge), 'class' => 'apw-numeric');
+
+        //As % of all pledges to Global Fund
+        if($early_pledge > 0 && $total_early_pledge > 0) {
+            $row[] = array('data' => number_format(($early_pledge / $total_early_pledge) * 100, 1) . ' %', 'class' => 'apw-numeric');
+        } else {
+            $row[] = array('data' => 0, 'class' => 'apw-numeric');
+        }
+        //fetch the early contribution from 2001/2 to 2013 for this donor
+        $early_contribution = db_query("SELECT SUM(paid_in)
+            FROM contribution c
+            WHERE target_year_id IN (" . implode(",", $early_funding_years) . ") AND c.donor_id = " . $data->id)->fetchField();
+        $row[] = array('data' => number_format($early_contribution), 'class' => 'apw-numeric');
+
+        //calculate the % of contribution to the pledge
+        if($data->pledge_amount && $early_pledge > 0) {
+            $row[] = array('data' => number_format(($early_contribution / $early_pledge) * 100, 1) . ' %', 'class' => 'apw-numeric');
+        } else {
+            $row[] = array('data' => 0, 'class' => 'apw-numeric');
+        }
+        $row[] = array('data' => '', 'class' => 'apw-blank-col');
+        
+        //get the pledges and contribution from 2013 to 2016
+        $late_pledge = db_query("SELECT SUM(p.amount_in_usd) pledge_amount
+FROM pledge p
+WHERE target_year_id IN (" . implode(",", $late_funding_years) . ") AND p.donor_id = " . $data->id)->fetchField();
+
+        $row[] = array('data' => number_format($late_pledge), 'class' => 'apw-numeric');
+
+        //As % of all pledges to Global Fund
+        if($early_pledge > 0 && $total_late_pledge > 0) {
+            $row[] = array('data' => number_format(($late_pledge / $total_late_pledge) * 100, 1) . ' %', 'class' => 'apw-numeric');
+        } else {
+            $row[] = array('data' => 0, 'class' => 'apw-numeric');
+        }
+        //fetch the early contribution from 2013 - 2016 for this donor
+        $late_contribution = db_query("SELECT SUM(paid_in)
+            FROM contribution c
+            WHERE target_year_id IN (" . implode(",", $late_funding_years) . ") AND c.donor_id = " . $data->id)->fetchField();
+        $row[] = array('data' => number_format($late_contribution), 'class' => 'apw-numeric');
+
+        //calculate the % of contribution to the pledge
+        if($data->pledge_amount && $late_pledge > 0) {
+            $row[] = array('data' => number_format(($late_contribution / $late_pledge) * 100, 1) . ' %', 'class' => 'apw-numeric');
+        } else {
+            $row[] = array('data' => 0, 'class' => 'apw-numeric');
+        }
+
+        $row[] = array('data' => '', 'class' => 'apw-blank-col');
+        //now put in place the totals/cumulative
+        $row[] = array('data' => number_format($data->pledge_amount), 'class' => 'apw-numeric');
+        //get the total contribution
+        $cumulative_contribution = db_query("SELECT SUM(paid_in)
+            FROM contribution c
+            WHERE c.donor_id = " . $data->id)->fetchField();
+        $row[] = array('data' => number_format($cumulative_contribution), 'class' => 'apw-numeric');
+
+        $donors[] = $row;
+    }
+
+    return $donors;
+}
+
+function _individual_donor_page($donor_id, $referer) {
+     
+    //check if donor specified is valid and if so get the donor specified
+    $sql = "SELECT id, name, flag_path, donor_type FROM donor WHERE md5(id) = '" . $donor_id . "'";
+
+    $result = db_query($sql);
+
+    $donor = $result->fetchObject();
+
+    if (empty($donor)) {
+        drupal_set_message("The donor identity is invalid.", 'warning');
+        // if the grant_id is not an int, We will just show a standard "access denied" page in this case.
+        drupal_access_denied();
+
+        return;  // We actually don't get here, but we are paranoid
+    }
+
+    if ('country' == $donor->donor_type) {
+        drupal_set_title('<img width="100" src=' . base_path() . path_to_theme() . '/images/flags/' . $donor->flag_path . '>' . ' ' . $donor->name, PASS_THROUGH);
+    } else {
+        drupal_set_title($donor->name);
+    }
+    
+    _log_page_view($_SERVER['REQUEST_URI'], drupal_get_title());
+    
+    if('c' == $referer) {
+	drupal_set_breadcrumb(array('<a href="/page/home">Home</a>', l(t('Global Fund Donors'), 'page/global-fund-donors'), $donor->name));
+    } else {
+	drupal_set_breadcrumb(array('<a href="/page/home">Home</a>', l(t('Donor Score'), 'page/donor-score'), $donor->name));
+    }
+    
+    //get the details of pledges and contributions for this donor for normal
+    $donor_service = new DonorUtilService();
+    $pledge_result = $donor_service->donor_pledge_contribution($donor->id);
+
+    $parsed_result = array();
+    $total_pledge = 0;
+    $total_contribution = 0;
+    
+    $include_score_cols = false;
+
+    foreach ($pledge_result as $key => $row) {
+
+        $total_pledge += $row[1];
+        $row[1] = array('data' => number_format($row[1]), 'class' => 'apw-numeric');
+
+        $total_contribution += $row[3];
+        $row[3] = array('data' => number_format($row[3]), 'class' => 'apw-numeric');
+
+        $parsed_result[] = $row;
+	
+	if(!empty($row[5]['data'])) {
+		$include_score_cols = true;
+	}
+    }
+
+    $total_arr = array(array('data' => ''),
+        array('data' => number_format($total_pledge), 'class' => 'apw-amount-total'),
+        null,
+        array('data' => number_format($total_contribution), 'class' => 'apw-amount-total'),
+        null);
+	
+	if (true == $include_score_cols && 'country' == $donor->donor_type) {
+		$total_arr[] = null;
+		$total_arr[] = null;
+		$total_arr[] = null;
+	    }
+
+    $parsed_result[] = $total_arr;
+
+    $headers = array(
+        array('data' => t('Year'), 'width' => '10%'),
+        array('data' => t('Total pledge ($)')),
+        array('data' => t('% change from previous year'), 'width' => '10%'),
+        array('data' => t('Total contribution ($)')),
+        array('data' => t('Contribution as % of pledge'), 'width' => '10%'),
+            );
+	    
+	    if ('country' == $donor->donor_type) {
+		$headers[] = array('data' => t('Economic classification'), 'class' => 'apw-center-text');
+		$headers[] = array('data' => t('GNI ($)'), 'class' => 'apw-numeric');
+		$headers[] = array('data' => t('Contribution as % of GNI'), 'class' => 'apw-numeric');
+		$headers[] = array('data' => t('Donor score'), 'class' => 'apw-center-text');
+	    }
+          
+    $normal_tbl_text = theme('table', array('header' => $headers, 'rows' => $parsed_result, 'caption' => t('Pledge/Contribution broken down by year'), 'attributes' => array('class' => array('apw_entity_funding_grid'))));
+    //$normal_tbl_text = theme('table', $headers, $parsed_result, array('class' => 'apw_entity_funding_grid'), t('Pledge/Contribution broken down by year'));
+
+    //now check to this if this donor also contributes to the AMFm
+    $pledge_result = $donor_service->donor_pledge_contribution($donor->id, 'AMFm');
+    $amfm_tbl_text = '';
+
+    if ($pledge_result) {
+        $parsed_result = array();
+        $total_pledge = 0;
+        $total_contribution = 0;
+
+        foreach ($pledge_result as $key => $row) {
+
+            $total_pledge += $row[1];
+            $row[1] = array('data' => number_format($row[1]), 'class' => 'apw-numeric');
+
+            $total_contribution += $row[3];
+            $row[3] = array('data' => number_format($row[3]), 'class' => 'apw-numeric');
+
+            $parsed_result[] = $row;
+        }
+
+        $parsed_result[] = array(array('data' => ''),
+            array('data' => number_format($total_pledge), 'class' => 'apw-amount-total'),
+            null,
+            array('data' => number_format($total_contribution), 'class' => 'apw-amount-total'),
+            null);
+
+        $amfm_tbl_text = theme('table', array('header' => array(
+            array('data' => 'Year'),
+            array('data' => t('Total pledge ($)')),
+            array('data' => t('% change from previous period'), 'width' => '10%'),
+            array('data' => t('Total contribution ($)')),
+            array('data' => t('Contribution as % of pledge'), 'width' => '10%'),
+                ),
+            'rows' => $parsed_result, 
+            'attributes' => array('class' => array('apw_entity_funding_grid')), 
+            'caption' => t('Affordable Medicines Facility - Malaria (AMFm)')));
+    }
+
+    $chart_element = theme('pledge_contribution_chart_theme', array('donor_id' => $donor->id));
+
+    $extra = '';
+    if ('country' == $donor->donor_type) {
+         $extra = theme('individual_donor_introduction');
+    }
+    
+    return $extra . 
+	    $normal_tbl_text . 
+	    $amfm_tbl_text . 
+	    $chart_element . 
+		get_notes($donor->id, -1);
+}
+
+function _pledge_contribution_chart($donor_id) {
+
+    if (!is_numeric($donor_id)) {
+        drupal_set_message("The donor id must be a valid value. " . $donor_id, 'warning');
+        // if the donor_id is not an int, We will just show a standard "access denied" page in this case.
+        drupal_access_denied();
+
+        return;  // We actually don't get here, but we are paranoid.
+    }
+
+    $donor_service = new DonorUtilService();
+    $data_result = $donor_service->pledge_contribution_chart_data($donor_id);
+
+    //build the chart data to send back
+    //$chart_data ["year data array", "pledge data array", "contribution data array"]
+    $chart_data = array();
+    $chart_data[] = array(); //to store the year data
+    $chart_data[] = array(); //to store the pledge data
+    $chart_data[] = array(); //to store the contribution data
+
+    foreach ($data_result as $key => $row) {
+        $chart_data[0][] = $row[0]; //get the year
+
+        $chart_data[1][] = $row[1];
+        $chart_data[2][] = $row[2];
+    }
+
+    header("Content-type: application/json");
+    echo json_encode($chart_data);
+}

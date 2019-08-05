@@ -1,0 +1,5 @@
+; $Id$
+name = GFO Issue View
+description = Module that renders the GFO Issue page
+package = APW Package
+core = 8.x

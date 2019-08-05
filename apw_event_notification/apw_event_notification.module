@@ -1,0 +1,357 @@
+<?php
+
+include_once 'EventNotification.class.php';
+
+/**
+ * @file
+ * Use this module to learn about Drupal's menu system,
+ * specifically how local tasks work.
+ */
+
+/**
+ * Implementation of hook_perm().
+ */
+function apw_event_notification_perm() {
+    return array('significant event subscription');
+}
+
+/**
+ * Implementation of hook_menu().
+ */
+function apw_event_notification_menu() {
+
+    $items['user/%/event'] = array(
+        'title' => 'Event Notification',
+        'access callback' => 'user_access',
+        'access arguments' => array('significant event subscription'),
+        'page callback' => '_event_notification_renderer',
+        'page arguments' => array(2), // Pass 'fruity'.
+        'type' => MENU_LOCAL_TASK,
+        'weight' => 10
+    );
+
+    return $items;
+}
+
+function _event_notification_renderer($type) {
+    drupal_set_title(t("Subscribe/Unsubscribe to event notification(s)"));
+    $output = t('On this page, you can subscribe or unsubscribe from the different alerts relating to implementer countries, such as new grant agreements, new disbursements, grants deemed to be in trouble and so much more. Using the countries dropdown, you have the ability to choose certain countries of interest or you can select to receive the alerts for all the countries as they occur.');
+// Return the HTML generated from the $form data structure.
+    $output .= drupal_get_form('_event_notification_subscription_panel');
+
+    return $output;
+}
+
+/**
+ * Define a form.
+ */
+function _event_notification_subscription_panel() {
+
+    $available_events = _event_list();
+    $countries = _get_implementer_countries();
+
+    $fieldset_counter = 0;
+    foreach ($available_events as $event_type => $events) {
+        $event_type_fieldset_comp_name = 'event_notification_' . $event_type;
+
+        $form[$event_type_fieldset_comp_name] = array(
+            '#title' => t($event_type),
+            '#type' => 'fieldset',
+            '#weight' => $fieldset_counter,
+            '#collapsible' => FALSE,
+            '#collapsed' => FALSE
+        );
+        $fieldset_counter++;
+
+        foreach ($events as $event_id => $event_detail) {
+            $event_name = $event_detail[0];
+            $event_desc = $event_detail[1];
+            $wrapper_div = $event_type_fieldset_comp_name . $event_name;
+
+            $form[$event_type_fieldset_comp_name][$event_name] = array(
+                '#title' => $event_name,
+                '#type' => 'fieldset',
+                '#description' => $event_desc,
+                '#prefix' => '<div  id="' . $wrapper_div . '"  style="margin-top: -10px;">',
+                '#suffix' => '</div>',
+                '#collapsible' => TRUE,
+                '#collapsed' => FALSE
+            );
+
+            //get the countries choosen for this event
+            $countries_followed = _get_countries_to_follow($event_id);
+
+            foreach ($countries_followed as $country_id) {
+                
+                $form[$event_type_fieldset_comp_name][$event_name][$event_id . '-country_to_follow-' . $country_id] = array(
+                    '#prefix' => '<div style="width: 550px;margin-top: -15px;">',
+                    '#suffix' => '</div>',
+                    '#type' => 'select',
+                    '#default_value' => $country_id,
+                    //'#value' => ,
+                    //'#description' => t('Please select a country.'),
+                    '#multiple' => FALSE,
+                    '#options' => $countries
+                );
+
+                if (-1 != $country_id) {
+                    $form[$event_type_fieldset_comp_name][$event_name][$event_id . 'image_button' . $country_id] = array(
+                        '#prefix' => '<div style="position: relative;width: 40px;margin-top: -40px;left: 390px">',
+                        '#type' => 'image_button',
+                        '#src' => 'sites/all/themes/apw_sena/images/icons/remove-icon.png',
+                        '#suffix' => '</div>',
+                        '#default_value' => $event_id . '-country_to_unfollow-' . $country_id,
+                    );
+                }
+            }
+
+            $show_add_country_btn = false;
+
+            if (sizeof($countries_followed) > 1) {
+                $show_add_country_btn = true;
+            }
+            if (false == $show_add_country_btn && sizeof($countries_followed) == 1) {
+                if ($countries_followed[0] > 0) {//show button if the country is anything other than -1 (None) or 0 (All)
+                    $show_add_country_btn = true;
+                }
+            }
+
+            if ($show_add_country_btn) {
+                $form[$event_type_fieldset_comp_name][$event_name][$event_id . '-country_to_follow--1'] = array(
+                    '#prefix' => '<div style="width: 550px;margin-top: -15px;">',
+                    '#suffix' => '</div>',
+                    '#type' => 'select',
+                    '#default_value' => -1,
+                    //'#value' => ,
+                    //'#description' => t('Please select a country.'),
+                    '#multiple' => FALSE,
+                    '#options' => $countries
+                );
+            }
+        }
+    }
+
+    $form['alert_frequency_choice'] = array(
+        '#title' => t('How often would you like to receive the alerts?'),
+        '#type' => 'radios',
+        '#weight' => $fieldset_counter++,
+        //'#description' => t('N/B GFO in Français, Русский and Español are not currently offered but plans are underway to publish it in those langauges soon.'),
+        '#options' => array('never' => 'Never', 'immediate' => 'As it happens', 'daily' => 'Once a day', 'weekly' => 'Once a week', 'monthly' => 'Once a month'),
+        //'#options' => array('As it happens', 'Once a day', 'Once a week', 'Once a month'),
+        '#default_value' => _get_alert_frequency_pref() // default to As it happens
+    );
+
+    $form['submit'] = array(
+        '#type' => 'submit',
+        '#value' => t('Submit'),
+        '#weight' => $fieldset_counter++,
+    );
+
+    return $form;
+//    $form['event_notification']['disclaimer'] = array(
+//        '#prefix' => '<div>',
+//        '#value' => t('The information below is entirely optional.'),
+//        '#suffix' => '</div>',
+//    );
+}
+
+/**
+ * Validate the form.
+ */
+function _event_notification_subscription_panel_validate($form, &$form_state) {
+
+    if ('Submit' === $form_state['clicked_button']['#value']) {
+
+        //validate the countries choosen and also parse them
+        $post_params = $form_state['values'];
+        $countries_to_follow = array();
+
+        foreach ($post_params as $param => $value) {
+
+            if (preg_match('/country_to_follow/', $param)) {
+
+                $event_pos = strpos($param, '-c');
+
+                $event_id = substr($param, 0, $event_pos);
+                $country_id = $value;
+
+                if (array_key_exists($event_id, $countries_to_follow)) {
+                    $c = $countries_to_follow[$event_id];
+                    $c[] = $country_id;
+                    $countries_to_follow[$event_id] = $c;
+                } else {
+                    $countries_to_follow[$event_id] = array($country_id);
+                }
+            }
+        }
+
+        foreach ($countries_to_follow as $event_id => $countries) {
+            if (sizeof($countries) > 1) {
+                foreach ($countries as $country_id) {
+                    if (0 == $country_id) {
+                        form_set_error($event_id . '-country_to_follow-' . $country_id,
+                                t('If you select the option "All Countries" you cannot select another country, please rectify that to continue.'));
+                    }
+                }
+            }
+        }
+
+        $form_state['countries_to_follow'] = $countries_to_follow;
+    } else {
+        $unfollow_detail = $form_state['clicked_button']['#default_value'];
+        $countries_to_unfollow = array();
+
+        $event_pos = strpos($unfollow_detail, '-c');
+        $event_id = substr($unfollow_detail, 0, $event_pos);
+
+        $country_pos = strlen($unfollow_detail) - strpos($unfollow_detail, 'w-');
+        $country_pos -= 2;
+        $country_id = substr($unfollow_detail, -$country_pos);
+
+        $countries_to_unfollow[$event_id] = array($country_id);
+
+        $form_state['countries_to_unfollow'] = $countries_to_unfollow;
+    }
+}
+
+/**
+ * Handle post-validation form submission.
+ */
+function _event_notification_subscription_panel_submit($form, &$form_state) {
+    global $user;
+    $uid = $user->uid;
+
+    //follow countries if applicable
+    if (array_key_exists('countries_to_follow', $form_state)) {
+        $events = $form_state['countries_to_follow'];
+
+//first clear all the previous event notification linkage for this user
+        $sql = sprintf("DELETE from system_user_has_event_type
+        WHERE event_type_id in (%s) AND system_user_id = %d", implode(',', array_keys($events)), $uid);
+        db_query($sql);
+
+        //go ahead to recreate the gfo subcription linkages
+        foreach ($events as $event_type_id => $countries_to_follow) {
+            foreach ($countries_to_follow as $country_id) {
+                if ($country_id >= 0) {
+                    $sql = "SELECT * FROM system_user_has_event_type WHERE system_user_id = %d AND event_type_id = %d AND country_id = %d";
+
+                    $result = db_query($sql, $uid, $event_type_id, $country_id);
+
+                    if (false == db_fetch_object($result)) {
+                        $sql = "INSERT INTO system_user_has_event_type (system_user_id, event_type_id, country_id, date_created) VALUES (%d, %d,%d, now())";
+                        db_query($sql, $uid, $event_type_id, $country_id);
+                    }
+                }
+            }
+        }
+    }
+//unfollow countries if applicable
+    if (array_key_exists('countries_to_unfollow', $form_state)) {
+
+        $events = $form_state['countries_to_unfollow'];
+
+        foreach ($events as $event_id => $countries) {
+            $sql = sprintf("DELETE from system_user_has_event_type
+        WHERE event_type_id = %d AND system_user_id = %d AND country_id in (%s)", $event_id, $uid, implode(',', array_values($countries)));
+            db_query($sql);
+        }
+    }
+    //set the user alert frequency preference
+    global $user;
+
+    $sql = "UPDATE {user_detail} SET alert_frequency = '%s' WHERE user_id = %d";
+    db_query($sql,
+            $form_state['values']['alert_frequency_choice'],
+            $user->uid);
+}
+
+function _event_list() {
+    $sql = "SELECT group_text
+FROM event_type
+WHERE is_public = 1 AND group_text != 'GFO'
+GROUP by group_text
+ORDER BY group_text";
+
+    $result = db_query($sql);
+
+    $event_group = array();
+
+    while ($data = db_fetch_object($result)) {
+        $event_group[$data->group_text] = array();
+
+        $sql = "SELECT id, name, description FROM event_type WHERE group_text = '%s' AND is_public = 1";
+
+        $event_type_result = db_query($sql, $data->group_text);
+
+        while ($event_type = db_fetch_object($event_type_result)) {
+            $event_group[$data->group_text] [$event_type->id] = array(t($event_type->name), t($event_type->description));
+        }
+    }
+
+    return $event_group;
+}
+
+function _get_implementer_countries() {
+    $sql = "SELECT id, name
+FROM country
+ORDER BY name";
+
+    $result = db_query($sql);
+
+    $countries = array();
+
+    $countries[-1] = t('Please select a country');
+    $countries[0] = t('All Countries');
+
+    while ($data = db_fetch_object($result)) {
+        $countries[$data->id] = $data->name;
+    }
+
+    return $countries;
+}
+
+function _get_countries_to_follow($event_id) {
+    global $user;
+
+    $sql = "SELECT country_id
+FROM system_user_has_event_type
+WHERE event_type_id = %d AND system_user_id = %d";
+
+    $result = db_query($sql, $event_id, $user->uid);
+
+    $countries = array();
+    while ($data = db_fetch_object($result)) {
+        $countries[] = t($data->country_id);
+    }
+
+    if (0 == sizeof($countries)) {
+        $countries[] = -1;
+    }
+
+    return $countries;
+}
+
+function _get_alert_frequency_pref() {
+    global $user;
+
+    $sql = "SELECT alert_frequency
+FROM {user_detail}
+WHERE user_id = %d";
+
+    $data = db_fetch_object(db_query($sql, $user->uid));
+    if ($data) {
+        $freq = $data->alert_frequency;
+        if('' === $freq) {
+            $freq = 'never';//this should be the default
+        }
+    }
+
+    return $freq;
+}
+
+//                '#type' => 'select',
+//                '#default_value' => 0,
+//                '#description' => t('Select event type.'),
+//                '#multiple' => FALSE,
+//                '#options' => $events

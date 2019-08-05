@@ -1,0 +1,5 @@
+name = APW User Subscription module
+description = This module enables users to subscribe to GFO and OFM via e-mail, facebook and twitter
+package = APW Package
+core = 7.x
+dependencies[]=ctools

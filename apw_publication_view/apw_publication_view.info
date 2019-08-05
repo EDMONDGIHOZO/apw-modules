@@ -1,0 +1,5 @@
+; $Id$
+name = Publication View
+description = Module that renders the publication page
+package = APW Package
+core = 7.x

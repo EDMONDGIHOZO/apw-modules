@@ -1,0 +1,5 @@
+; $Id$
+name = Global Fund Overview
+description = Module to handle the global fund overview web page.
+package = APW Package
+core = 8.x

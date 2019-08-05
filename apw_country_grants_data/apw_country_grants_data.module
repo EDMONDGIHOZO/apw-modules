@@ -1,0 +1,883 @@
+<?php
+
+include_once 'GrantDetail.class.php';
+include_once 'GrantChartService.class.php';
+include_once 'CountryChartService.class.php';
+include_once 'CountryGrantListing.class.php';
+include_once 'GrantAnomalyDetector.class.php';
+
+//drupal_add_js('sites/all/themes/apw_sena/js/tablesorter/jquery.tablesorter.js');
+//drupal_add_js('sites/all/themes/goodnex/js/tablesorter.js');
+
+function apw_country_grants_data_node_view($node, $view_mode, $langcode) {
+
+  if ('full' === $view_mode) {
+    if ((5 == $node->nid ||
+        1623 == $node->nid ||
+        1624 == $node->nid ||
+        1625 == $node->nid)) {
+
+      apw_country_grants_data_custom_node_render($node);
+    }
+  }
+}
+
+function apw_country_grants_data_custom_node_render($node) {
+
+  //drupal_set_message(t("Users are advised to interpret the data on these pages with caution. The Global Fund recently made changes to the grant data that it provides. We are in the process of updating the information on our pages to reflect these changes."), 'warning');
+// Pull all the countries from the db and their respective agreement amounts
+
+  $country_listing = new CountryGrantListing();
+
+  $country_grant_info = $country_listing->country_grant_amount('2010-01-01', date('Y-m-d'));
+
+  $header = array();
+  $header[] = array('data' => t('Country'), 'rowspan' => 2);
+  $header[] = array('data' => t('Total agreement amount'), 'class' => 'apw-numeric-center', 'rowspan' => 2);
+  $header[] = array('data' => t('Total disbursed to date'), 'class' => 'apw-numeric-center', 'rowspan' => 2);
+  $header[] = array('data' => t('Ratings since Jan 2010'), 'colspan' => 3, 'class' => 'apw-amount-total');
+
+  //$country_grant_apportionment = theme('table', array('header' => $header, 'rows' => $country_grant_info[0]));
+
+  $map_data = theme('world_map_gf_implementers', array('map_data' => $country_grant_info[1], 'legend_data' => $country_grant_info[2]));
+
+  $node->content['country_portfolio_section'] = array(
+    '#markup' => $map_data,
+    '#weight' => 1,
+  );
+}
+
+// $Id$
+/**
+ * @file
+ * Fetches the statistics about gf grants to various regions and disease component
+ */
+function apw_country_grants_data_menu() {
+
+  $items['country_pie_chart'] = array(
+    'page callback' => '_country_pie_chart',
+    'page arguments' => array(1),
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['country'] = array(
+    'page callback' => '_country_grants',
+    'page arguments' => array(1),
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['country_grant'] = array(
+    'page callback' => '_grant_detail',
+    'page arguments' => array(1),
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  $items['grant_chart'] = array(
+    'page callback' => '_grant_chart',
+    'page arguments' => array(1),
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  $items['country_chart'] = array(
+    'page callback' => '_country_charts',
+    'page arguments' => array(1),
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  $items['country_disease_chart'] = array(
+    'page callback' => '_country_disease_chart',
+    'page arguments' => array(1, 2),
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['country_epidemiological_dc_charts'] = array(
+    'page callback' => '_country_epidemiological_dc_chart',
+    'page arguments' => array(1, 2, 3),
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+
+function _country_pie_chart($country_id) {
+  if (!is_numeric($country_id)) {
+    drupal_set_message("The country id must be a valid value.", 'warning');
+    // if the country_id is not an int, We will just show a standard "access denied" page in this case.
+    drupal_access_denied();
+    return;  // We actually don't get here.
+  }
+
+  header("Content-type: application/json");
+  echo json_encode(_country_comp_status_chart_data($country_id));
+}
+
+function _country_charts($country_id) {
+  if (!is_numeric($country_id)) {
+    drupal_set_message("The country id must be a valid value.", 'warning');
+    // if the country_id is not an int, We will just show a standard "access denied" page in this case.
+    drupal_access_denied();
+    return;  // We actually don't get here.
+  }
+  //lets get the this countries's rating info
+  header("Content-type: application/json");
+  echo json_encode(_country_rating_data($country_id));
+}
+
+function _country_epidemiological_dc_chart($country_id, $dc, $who_stat_id) {
+  if (!is_numeric($country_id)) {
+    drupal_set_message("The grant id must be a valid value.", 'warning');
+    // if the grant_id is not an int, We will just show a standard "access denied" page in this case.
+    drupal_access_denied();
+
+    return;  // We actually don't get here.
+  }
+  header("Content-type: application/json");
+  echo json_encode(_country_epidemiological_dc_data($country_id, $dc, $who_stat_id));
+}
+
+function _country_disease_chart($country_id, $disease_id) {
+  if (!is_numeric($country_id)) {
+    drupal_set_message("The grant id must be a valid value.", 'warning');
+    // if the grant_id is not an int, We will just show a standard "access denied" page in this case.
+    drupal_access_denied();
+
+    return;  // We actually don't get here.
+  }
+
+  //get the grants for this country and the disease component 
+  $sql = "SELECT id FROM gf_grant WHERE country_id = :country_id AND disease_component_id = :disease_id";
+
+  $grants = db_query($sql, array(':country_id' => $country_id, ':disease_id' => $disease_id));
+  $grant_ids = array();
+
+  foreach ($grants as $grant) {
+    $grant_ids[] = $grant->id;
+  }
+
+  header("Content-type: application/json");
+  echo json_encode(_grant_rating_data($grant_ids));
+}
+
+function _grant_chart($grant_id) {
+  if (!is_numeric($grant_id)) {
+    drupal_set_message("The grant id must be a valid value.", 'warning');
+    // if the grant_id is not an int, We will just show a standard "access denied" page in this case.
+    drupal_access_denied();
+
+    return;  // We actually don't get here.
+  }
+
+  //lets get the this grant's budget info
+
+  header("Content-type: application/json");
+  echo json_encode(_grant_rating_data(array($grant_id)));
+}
+
+function _country_epidemiological_dc_data($country_id, $dc, $stat_id) {
+  $country_listing = new CountryGrantListing();
+  if ($dc == 1 || $dc == 4) {
+    $country_dc_epidemiological_results = $country_listing->country_dc_unaids_results($country_id, $dc, $stat_id);
+  }
+  else { 
+    $country_dc_epidemiological_results = $country_listing->country_dc_who_results($country_id, $dc, $stat_id);
+  }
+
+  return $country_dc_epidemiological_results;
+}
+
+/**
+ * Page callback.
+ */
+function _grant_detail($grant_identifier) {
+
+  $grant_detail = new GrantDetail();
+
+  if (is_numeric($grant_identifier)) {
+    $result = $grant_detail->retrieve_grant_details($grant_identifier, null, '2010-01-01', date('Y-m-d'));
+  }
+  else {
+    $result = $grant_detail->retrieve_grant_details(null, $grant_identifier, '2010-01-01', date('Y-m-d'));
+  }
+
+  $details = $result[0];
+
+  if (!$details) {
+    drupal_set_message("The grant id or number must be a valid value.", 'warning');
+    // if the country_id is not an int, We will just show a standard "access denied" page in this case.
+    drupal_access_denied();
+    return;  // We actually don't get here, but we are paranoid
+  }
+
+  if (!$details[0][1]) {
+    //seems this is not a valid grant id because it does not have a grant number gf_grant.grant_number
+    drupal_set_message("Invalid grant id", 'error');
+    drupal_access_denied();
+  }
+
+  //drupal_set_message(t("Users are advised to interpret the data on these pages with caution. The Global Fund recently made changes to the grant data that it provides. We are in the process of updating the information on our pages to reflect these changes."), 'warning');
+  //get the introduction text
+
+  drupal_set_title($details[1][1] . " Global Fund " . ("SSF" == $details[2][1] ? 'Single Stream Funding' : $details[2][1]) . ' ' . " Grant " . $details[0][1]);
+  drupal_set_breadcrumb(array('<a href="/page/home">Home</a>', l(t('Global Fund Grants'), 'node/4'), l(t('Grants by Country'), 'node/5'), l(t($details[1][1]), 'country/' . $result[2]), $details[0][1]));
+
+  _log_page_view($_SERVER['REQUEST_URI'], drupal_get_title());
+
+//Home » Global Fund Grants » Grants by Country » [country] » [grant number]
+  $grants_details_tab = array();
+
+  $grant_id = $result[1];
+
+  $intro_text = theme('country_particular_grant_introduction');
+
+  $grant_chart_text = theme('grant_chart_report', array('grant_id' => $grant_id));
+
+  $grant_portfolio_text = theme('table', array('header' => null, 'rows' => $details, 'attributes' => array('id' => 'country_grant_details_table'), 'caption' => 'Grant Details'));
+
+  $grants_details_tab[0] = array(
+    'title' => t('Grant details'),
+    'contents' => array('#markup' => $grant_portfolio_text),
+  );
+
+  $disbursements = $grant_detail->retrieve_grant_disbursements($grant_id);
+  if (sizeof($disbursements) > 1) {
+
+    $header = array(array(
+        array('data' => 'Disbursement date &nbsp;', 'rowspan' => 2),
+        array('data' => 'Disbursed amount &nbsp;', 'rowspan' => 2))
+    );
+
+    $disbursements_markup = apw_country_grants_data_theme_table($header, null, $disbursements, array('id' => 'country_stats_table', 'class' => 'country_grant_listing_table'), null, ' ', null);
+    $grants_details_tab[1] = array(
+      'title' => t('Disbursements'),
+      'contents' => array('#markup' => $disbursements_markup),
+    );
+  }
+
+  $reporting_periods_markup = array();
+  $reporting_periods = $grant_detail->retrieve_grant_reporting_periods($grant_id, '2010-01-01', date('Y-m-d'));
+
+  if (sizeof($reporting_periods) > 1) {
+    $subheader = array(
+      array('data' => t('From'), 'class' => 'apw-amount-total', 'header' => true),
+      array('data' => t('To'), 'class' => 'apw-amount-total', 'header' => true),
+    );
+
+    $header = array(array(
+        array('data' => 'Progress update no.', 'rowspan' => 2),
+        array('data' => 'Period rated', 'colspan' => 2, 'class' => 'no_header_btns apw-amount-total'),
+        array('data' => 'Rating &nbsp;', 'rowspan' => 2))
+      , $subheader);
+
+    $reporting_periods_markup = apw_country_grants_data_theme_table($header, null, $reporting_periods, array('id' => 'country_grant_listing_table_7', 'class' => 'country_grant_listing_table'), null, ' ', null);
+
+    $grants_details_tab[2] = array(
+      'title' => t('Ratings'),
+      'contents' => array('#markup' => $reporting_periods_markup),
+    );
+  }
+
+  $gr_perf_indicators = array();
+
+  $gr_perf_indicators_markup = array();
+
+  $gr_perf_indicators = $grant_detail->retrieve_grant_performance_indicators($grant_id);
+  if (sizeof($gr_perf_indicators) > 1) {
+    $subheader = array(
+      array('data' => t('From &nbsp;&nbsp;'), 'class' => 'apw-amount-total', 'header' => true),
+      array('data' => t('To&nbsp;&nbsp;'), 'class' => 'apw-amount-total', 'header' => true),
+    );
+    $header = array(array(
+        array('data' => 'Indicator', 'rowspan' => 2),
+        array('data' => 'Service delivery area', 'rowspan' => 2),
+        array('data' => 'Period rated &nbsp;', 'colspan' => 2, 'class' => 'no_header_btns apw-amount-total'),
+        array('data' => 'Target &nbsp;', 'rowspan' => 2, 'class' => 'apw-numeric'),
+        array('data' => 'Result &nbsp;', 'rowspan' => 2, 'class' => 'apw-numeric'))
+      , $subheader);
+
+    $gr_perf_indicators_markup = apw_country_grants_data_theme_table($header, null, $gr_perf_indicators, array('id' => 'country_grant_listing_table_8', 'class' => 'country_grant_listing_table'), null, ' ', null);
+
+    $grants_details_tab[3] = array(
+      'title' => t('Performance indicators'),
+      'contents' => array('#markup' => $gr_perf_indicators_markup),
+    );
+  }
+
+  $gr_conditions = array();
+
+  $gr_conditions_markup = array();
+
+  $gr_conditions = $grant_detail->retrieve_grant_conditions($grant_id);
+  if (sizeof($gr_perf_indicators) > 1) {
+
+    $header = array(array(
+        array('data' => 'Condition', 'rowspan' => 2),
+        array('data' => 'Condition type', 'rowspan' => 2),
+        array('data' => 'Condition status', 'rowspan' => 2),
+        array('data' => 'Condition tied to type', 'rowspan' => 2),
+        //array('data' => 'Condition tied to comment', 'rowspan' => 2),
+        array('data' => 'Condition comment', 'rowspan' => 2)));
+
+    $gr_conditions_markup = apw_country_grants_data_theme_table($header, null, $gr_conditions, array('id' => 'country_grant_listing_table_8', 'class' => 'country_grant_listing_table'), null, ' ', null);
+
+    $grants_details_tab[4] = array(
+      'title' => t('Grant conditions'),
+      'contents' => array('#markup' => $gr_conditions_markup),
+    );
+  }
+
+  //get the contacts for this grant
+  $country_listing = new CountryGrantListing();
+  $country_contacts = $country_listing->retrieve_grant_contact($grant_id);
+
+  if (!(empty($country_contacts))) {
+    $header = array(array('data' => 'Organization type'),
+      array('data' => 'Organization'),
+      array('data' => 'First name'),
+      array('data' => 'Family name'),
+      array('data' => 'Phone number'),
+      array('data' => 'Email address'),
+      array('data' => 'Role'));
+
+    $contact_text = theme('table', array('header' => $header, 'rows' => $country_contacts,
+      'attributes' => array('class' => array('apw_gf_donor_grid'))));
+
+    $grants_details_tab[] = array(
+      'title' => 'Contacts',
+      'contents' => array('#markup' => $contact_text),
+    );
+  }
+
+  return $intro_text . $grant_chart_text . show_quick_tabs('grants_details_tab', $grants_details_tab, 'Zen');
+}
+
+/**
+ * Page callback.
+ */
+function _country_grants($country_id) {
+  if (!is_numeric($country_id)) {
+    drupal_set_message("The country id must be a valid value.", 'warning');
+    // if the country_id is not an int, We will just show a standard "access denied" page in this case.
+    drupal_access_denied();
+
+    return;  // We actually don't get here.
+  }
+  //drupal_set_message(t("Users are advised to interpret the data on these pages with caution. The Global Fund recently made changes to the grant data that it provides. We are in the process of updating the information on our pages to reflect these changes."), 'warning');
+  $country = _retrieve_country_name($country_id);
+  if (!$country) {
+    drupal_set_message("The country number must be a valid value.", 'warning');
+    // if the country_id is not an int, We will just show a standard "access denied" page in this case.
+    drupal_access_denied();
+    return;  // We actually don't get here, but we are paranoid
+  }
+  $country_flag_css = "body.html.not-front.not-logged-in.no-sidebars.page-country.page-country-.page-country-" . $country_id . " .page-content h1{color: #505050;
+background: url(/sites/all/themes/goodnex_sub/images/flags/128/" . strtolower($country->iso_code_2) . ".png) no-repeat;
+color: #505050;
+font-weight: normal;
+margin-bottom: 15px;
+height: 50px;
+background-size: 60px;
+text-indent: 3em;
+overflow: hidden;
+line-height: 2;
+margin-left: 20px;
+font-size: 25px;
+}";
+
+  drupal_add_css($country_flag_css, 'inline');
+  drupal_set_title("" . $country->name);
+  //  drupal_set_title("Global Fund Grants to " . $country->name);
+  drupal_set_breadcrumb(array('<a href="/page/home">Home</a>', l(t('Global Fund Grants'), 'node/4'), l(t('Grants by Country'), 'node/5'), $country->name));
+
+  _log_page_view($_SERVER["REQUEST_URI"], drupal_get_title());
+
+  $intro_text = theme('grant_data_source_explanation');
+
+  $country_listing = new CountryGrantListing();
+  $country_disease_grant = $country_listing->country_grant_by_disease($country_id, '2010-01-01', date('Y-m-d'));
+
+  $subheader = array(
+    array('data' => t('No..'), 'header' => true, 'class' => 'apw-numericnumeric-center'),
+    array('data' => t('Average'), 'class' => 'apw-amount-total', 'header' => true),
+    array('data' => t('Latest'), 'class' => 'apw-amount-total', 'header' => true),
+  );
+
+  $header = array(array(
+      array('data' => t('Disease &nbsp'), 'rowspan' => 2),
+      array('data' => t('Total agreement amount  &nbsp'), 'rowspan' => 2),
+      array('data' => t('Total disbursed to date  &nbsp'), 'rowspan' => 2),
+      array('data' => t('Ratings since Jan 2010'), 'colspan' => 3, 'rowspan' => 1, 'class' => 'no_header_btns')),
+    $subheader);
+
+  $disease_allocation_text = apw_country_grants_data_theme_table($header, null, $country_disease_grant, array('id' => 'country_stats_table'), null, ' ', null);
+
+  $stat_array = array();
+  $stat_array[] = array(array('data' => t("Global Fund grants to $country->name"), 'class' => 'apw-pronounced-text'), $disease_allocation_text);
+
+  //key results
+  $country_key_results = $country_listing->country_key_results($country_id);
+  $header = array(array(
+      array('data' => t('Result')),
+      array('data' => t('Value'))));
+
+  $key_result_text = apw_country_grants_data_theme_table($header, null, $country_key_results, array('id' => 'country_stats_table'), null, ' ', null);
+  $stat_array[] = array(array('data' => t("Key Results"), 'class' => 'apw-pronounced-text'), $key_result_text);
+
+  //gf links
+  $gf_links = $country_listing->gf_links_for_country($country);
+
+  $stat_array[] = array(array('data' => t("Global Fund links for $country->name"), 'class' => 'apw-pronounced-text'), theme('item_list', $gf_links));
+
+  $fact_array = $country_listing->data_fact_links_for_country($country);
+  if ($fact_array) {
+    $stat_array[] = array(array('data' => t("Data regarding HIV/AIDS, TB and malaria in $country->name"), 'class' => 'apw-pronounced-text'), theme('item_list', $fact_array));
+  }
+  //var_dump($fact_array);
+  $country_stats_text = apw_country_grants_data_theme_table(null, $stat_array, $stat_array);
+  $chart_report_text = theme('country_chart_report', array('country_id' => $country_id, 'country_name' => $country->name));
+
+  $quicktabs_grants_sub_tabs[] = apw_country_theme_sub_tabs("tabs", array('label1' => "Global Fund grants to " . $country->name, 'tab1' => $chart_report_text . $country_stats_text));
+
+  $tabs[] = array(
+    'title' => t("Global Fund grants to $country->name"),
+    'contents' => array('quicktabs', $quicktabs_grants_sub_tabs),
+  );
+
+  $country_dc_id = $country_listing->country_dc_ids($country_id, '2010-01-01', date('Y-m-d'));
+
+  if (sizeof($country_dc_id) > 0) {
+    drupal_add_js('sites/all/themes/apw_sena/js/charts/country-disease-chart.js', 'file'); //lets add the js that will draw the chart
+    drupal_add_js('sites/all/themes/apw_sena/js/charts/country-dc-epidemiological-chart.js', 'file');
+  }
+
+  foreach ($country_dc_id as $dc_value) {
+
+    $country_grant_listing = $country_listing->country_grant_dc_listing($country_id, $dc_value[0], '2010-01-01', date('Y-m-d'));
+
+    $subheader = array(
+      array('data' => '$', 'header' => true, 'class' => 'apw-amount-total'),
+      array('data' => '%', 'header' => true, 'class' => 'apw-amount-total'),
+      array('data' => t('No.&nbsp;&nbsp;'), 'header' => true, 'class' => 'apw-numericnumeric-center'),
+      array('data' => t('Average'), 'class' => 'apw-amount-total', 'header' => true),
+      array('data' => t('Latest'), 'class' => 'apw-amount-total', 'header' => true),
+    );
+
+    $header = array(array(
+        array('data' => 'Grant Number &nbsp;', 'rowspan' => 2),
+        array('data' => 'Principal Recipient &nbsp;', 'rowspan' => 2),
+        array('data' => 'PR Type', 'rowspan' => 2),
+        array('data' => 'Total agm’t amount', 'rowspan' => 2),
+        array('data' => 'Total disbursed to date', 'colspan' => 2, 'rowspan' => 1, 'class' => 'no_header_btns'),
+        array('data' => 'Ratings since Jan 2010', 'colspan' => 3, 'rowspan' => 1, 'class' => 'no_header_btns'),
+        array('data' => 'GF page', 'rowspan' => 2, 'class' => 'no_header_btns'),
+        array('data' => 'GF grant performance report', 'rowspan' => 2, 'class' => 'no_header_btns')),
+      $subheader);
+
+    $country_grant_portfolio_text = apw_country_grants_data_theme_table($header, null, $country_grant_listing, array('id' => 'country_grant_listing_table_' . $dc_value[0], 'class' => 'country_grant_listing_table'), 'Global Fund grants to ' . $country->name, ' ', null);
+
+    $country_disease_chart_text = theme('country_disease_chart', array('country_id' => $country_id,
+      'disease_id' => $dc_value[0],
+      'country_name' => $country->name,
+      'disease_name' => $dc_value[1]));
+
+    $who_stat_ids = $country_listing->country_dc_epidemiological_indicator_ids($country_id, $dc_value[0], '2010-01-01', date('Y-m-d'));
+
+    $country_epidemiological_chart_text = '';
+    foreach ($who_stat_ids as $who_stat_id) {
+      $country_epidemiological_chart_text = $country_epidemiological_chart_text . theme('country_epidemiological_dc_chart', array(
+            'country_id' => $country_id,
+            'disease_id' => $dc_value[0],
+            'who_stat_id' => $who_stat_id,
+            'country_name' => $country->name,
+            'disease_name' => $dc_value[1]
+      ));
+    }
+
+    if (strlen($country_epidemiological_chart_text) > 2) {
+      $quicktabs_dc_grants_sub_tabs[] = apw_country_theme_sub_tabs("tabs2" . $dc_value[0], array('label1' => "Grants details", 'tab1' => $country_grant_portfolio_text, 'label2' => 'Financial graphs', 'tab2' => $country_disease_chart_text, 'label3' => 'Epidemiological data', 'tab3' => $country_epidemiological_chart_text));
+    }
+    else {
+      $quicktabs_dc_grants_sub_tabs[] = apw_country_theme_sub_tabs("tabs2" . $dc_value[0], array('label1' => "Grants details", 'tab1' => $country_grant_portfolio_text, 'label2' => 'Financial graphs', 'tab2' => $country_disease_chart_text));
+    }
+    $tabs[] = array(
+      'title' => t($dc_value[1]),
+      'contents' => array('quicktabs', $quicktabs_dc_grants_sub_tabs),
+    );
+    $quicktabs_dc_grants_sub_tabs = array();
+  }
+
+
+  //get the contacts for this country
+  $country_contacts = $country_listing->retrieve_country_contact($country_id);
+
+  if (!(empty($country_contacts))) {
+    $header = array(array('data' => 'Organization type'),
+      array('data' => 'Organization'),
+      array('data' => 'First name'),
+      array('data' => 'Family name'),
+      array('data' => 'Phone number'),
+      array('data' => 'Email address'),
+      array('data' => 'Role'));
+
+    $contact_text = theme('table', array('header' => $header, 'rows' => $country_contacts,
+      'attributes' => array('class' => array('apw_gf_donor_grid'))));
+
+    $tabs[] = array(
+      'title' => 'Contacts',
+      'contents' => array('#markup' => $contact_text),
+    );
+  }
+  return $intro_text . show_quick_tabs('grant_country_data', $tabs, 'Sidenav');
+}
+
+function apw_country_grants_data_theme() {
+  return array(
+    'country_grant_introduction' => array('variables' => array('country_name' => NULL, 'analysis_date' => NULL)),
+    'country_specific_info_from_who' => array('variables' => array('fact_sheet_link' => NULL)),
+    'country_specific_info_from_globalhealth' => array('variables' => array('data_sheet_link' => NULL)),
+    'country_particular_grant_introduction' => array('variables' => array('date' => NULL)), //array('country_name' => NULL, 'round' => NULL, 'grant_number' => NULL, 'disease' => NULL, 'analysis_date' => NULL)),
+    'grant_chart_report' => array('variables' => array('grant_id' => NULL)),
+    'country_disease_chart' => array('variables' => array('country_id' => NULL, 'disease_id' => NULL, 'country_name' => NULL, 'disease_name' => NULL)),
+    'country_epidemiological_dc_chart' => array('variables' => array('country_id' => NULL, 'disease_id' => NULL, 'who_stat_id' => NULL, 'country_name' => NULL, 'disease_name' => NULL)),
+    'country_chart_report' => array('variables' => array('country_id' => NULL, 'country_name' => NULL)),
+    'country_grant_listing_introduction' => array('variables' => array('country_name' => NULL)),
+    'world_map_gf_implementers' => array('variables' => array('map_data' => NULL, 'legend_data' => NULL)),
+    'country_grant_performance_block' => array('variables' => NULL),
+    'grant_data_source_explanation' => array('variables' => NULL),
+  );
+}
+
+function _latest_download() {
+  $sql = "SELECT UNIX_TIMESTAMP(processed_at) download_completion_time
+FROM download_audit
+WHERE download_type = 'grants'
+AND processed_at IS NOT NULL
+ORDER BY download_completion_time DESC
+LIMIT 1";
+
+  $result = db_query($sql);
+
+  return $result->fetchObject();
+}
+
+//function _latest_datecheck() {
+//    $sql = "SELECT UNIX_TIMESTAMP(download_start_time) latest_data_check_time
+//FROM download_audit
+//WHERE download_type = 'grants'
+//ORDER BY download_start_time DESC
+//LIMIT 1";
+//
+//    $result = db_query($sql);
+//    return db_fetch_object($result);
+//}
+
+function _retrieve_country_name($country_id) {
+  $sql = "SELECT name, iso_code_2,iso_code_3, global_health_facts_id, who_id FROM country WHERE id = :country_id";
+
+  $result = db_query($sql, array(':country_id' => $country_id));
+  return $result->fetchObject();
+}
+
+function _country_rating_data($country_id) {
+  $chart_service = new CountryChartService();
+  $rating_result = $chart_service->prep_rating_data($country_id, 1, '2010-01-01', date('Y-m-d'));
+  return $rating_result;
+}
+
+function _country_comp_status_chart_data($country_id) {
+  $chart_service = new CountryChartService();
+  $disease_comp_status_result = $chart_service->country_comp_stats_chart_data($country_id, 1, '2010-01-01', date('Y-m-d'));
+  return $disease_comp_status_result;
+}
+
+function _grant_rating_data($grant_ids) {
+
+  $chart_service = new GrantChartService();
+  $grant_dates = $chart_service->retrieve_grant_dates($grant_ids);
+
+  $budget_data = $chart_service->prep_budget_data($grant_ids, $grant_dates['grant_start_date'], $grant_dates['grant_end_date']);
+
+  $disbursement_data = $chart_service->prep_disbursement_data($grant_ids, $budget_data[0]);
+
+  $expenditure_data = $chart_service->prep_expenditure_data($grant_ids, $budget_data[0], $grant_dates['grant_end_date']);
+
+  $date_data = $chart_service->prep_date_data($budget_data[0], $grant_dates);
+
+  $ratings_data = $chart_service->prep_rating_data($grant_ids, $budget_data[0]);
+
+  $grantAnomalyDetector = new GrantAnomalyDetector();
+
+//get the first problem scenerio for this chart
+  $expenditureBelowBudget = $grantAnomalyDetector->expenditureBelowBudget(75, $budget_data[1], $expenditure_data, $disbursement_data);
+
+//get the second problem scenerio for this chart
+  $disbursementDelay = $grantAnomalyDetector->disbursementDelay(365, $budget_data[1], $disbursement_data, $expenditure_data, array($expenditureBelowBudget[0]));
+
+//get the third problem scenerio for this chart
+  $expGreaterThanDisb = $grantAnomalyDetector->expGreaterThanDisb($budget_data[1], $disbursement_data, $expenditure_data, array($expenditureBelowBudget[0], $disbursementDelay[0]));
+
+//get the fourth problem scenerio for this chart
+  $expenditureDelay = $grantAnomalyDetector->expenditureDelay(365, $budget_data[1], $disbursement_data, $expenditure_data, array($expenditureBelowBudget[0], $disbursementDelay[0], $expGreaterThanDisb[0]));
+
+  //get the fifth problem scenerio for this chart
+  $disbursementBelowBudget = $grantAnomalyDetector->disbursementBelowBudget(85, $budget_data[1], $expenditure_data, $disbursement_data, array($expenditureBelowBudget[0], $disbursementDelay[0], $expGreaterThanDisb[0], $expenditureDelay[0]));
+
+  return array($budget_data[0],
+    $budget_data[1],
+    $disbursement_data,
+    $expenditure_data,
+    $date_data,
+    $ratings_data,
+    $expenditureBelowBudget[1],
+    $disbursementDelay[1],
+    $expGreaterThanDisb[1],
+    $expenditureDelay[1],
+    $disbursementBelowBudget[1]);
+}
+
+/**
+ * show_quick_tabs  function allowing display_of quick tabs
+ *
+ * @param unknown_type $header
+ * @param unknown_type $footer
+ * @param unknown_type $rows
+ * @param unknown_type $attributes
+ * @param unknown_type $caption
+ * @return unknown
+ */
+function show_quick_tabs($tabid = null, $tabs, $style) {
+
+  $options = array('style' => $style,
+    'renderer' => 'quicktabs',
+    'hide_empty_tabs' => 0,
+    'ajax' => 0);
+
+  $quicktabs = quicktabs_build_quicktabs($tabid, $options, $tabs);
+
+  return drupal_render($quicktabs);
+}
+
+/**
+ * Replacement of Drupal theme function allowing tfooter
+ *
+ * @param unknown_type $header
+ * @param unknown_type $footer
+ * @param unknown_type $rows
+ * @param unknown_type $attributes
+ * @param unknown_type $caption
+ * @return unknown
+ */
+function apw_country_grants_data_theme_table($header, $footer, $rows, $attributes = array(), $caption = NULL, $rows_multiple = NULL, $headersub = NULL) {
+
+  // Add sticky headers, if applicable.
+  if (count($header)) {
+    drupal_add_js('misc/tableheader.js');
+    // Add 'sticky-enabled' class to the table to identify it for JS.
+    // This is needed to target tables constructed by this function.
+    $attributes['class'] = empty($attributes['class']) ? 'sticky-enabled' : ($attributes['class'] . ' sticky-enabled');
+  }
+
+  $output = '<table' . drupal_attributes($attributes) . ">\n";
+
+  if (isset($caption)) {
+    $output .= '<caption>' . $caption . "</caption>\n";
+  }
+
+
+  // Multiple header rows
+  if (!$rows_multiple == NULL) {
+    $thead_set = '';
+    // Format the table header:
+    if (count($header)) {
+      foreach ($header as $number => $head) {
+        $ts = tablesort_init($head);
+        // HTML requires that the thead tag has tr tags in it followed by tbody
+        // tags. Using if clause to check and see if we have any rows and whether
+        // the thead tag is already open
+        if (count($rows) && $thead_set != 1) {
+          $output .= ' <thead><tr>';
+          $thead_set = 1;
+        }
+        else {
+          $output .= ' <tr>';
+        }
+        //$output .= (count($rows) ? ' <thead><tr>' : ' <tr>');
+        foreach ($head as $cell) {
+          $cell = tablesort_header($cell, $head, $ts);
+          $output .= _theme_table_cell($cell, TRUE);
+        }
+      }
+      // Using ternary operator to close the tags based on whether or not there are rows
+      $output .= (count($rows) ? " </tr></thead>\n" : "</tr>\n");
+    }
+    else {
+      $ts = array();
+    }
+    // One header row
+  }
+  else {
+    // Format the table header:
+    if (count($header)) {
+      $ts = tablesort_init($header);
+      // HTML requires that the thead tag has tr tags in it followed by tbody
+      // tags. Using ternary operator to check and see if we have any rows.
+      $output .= (count($rows) ? ' <thead><tr>' : ' <tr>');
+      foreach ($header as $cell) {
+        $cell = tablesort_header($cell, $header, $ts);
+        $output .= _theme_table_cell($cell, TRUE);
+      }
+      // Using ternary operator to close the tags based on whether or not there are rows
+      $output .= (count($rows) ? " </tr></thead>\n" : "</tr>\n");
+    }
+    else {
+      $ts = array();
+    }
+  }
+
+
+  if (count($footer)) {
+    // HTML requires that the tfoot tag has tr tags in it followed by tbody
+    // tags. Using ternary operator to check and see if we have any rows.
+    $output .= (count($rows) ? ' <tfoot><tr>' : ' <tr>');
+    $i = 0;
+    foreach ($footer as $cell) {
+      $cell = tablesort_cell($cell, $footer, $ts, $i++);
+      $output .= _theme_table_cell($cell);
+    }
+    // Using ternary operator to close the tags based on whether or not there are rows
+    $output .= (count($rows) ? " </tr></tfoot>\n" : "</tr>\n");
+  }
+
+  // Format the table rows:
+  if (count($rows) - 1) {
+
+    $output .= "<tbody>\n";
+    $flip = array('even' => 'odd', 'odd' => 'even');
+    $class = 'even';
+    $counter = 1;
+    foreach ($rows as $number => $row) {
+
+      $attributes = array();
+
+      // Check if we're dealing with a simple or complex row
+      if (isset($row['data'])) {
+        foreach ($row as $key => $value) {
+          if ($key == 'data') {
+            $cells = $value;
+          }
+          else {
+            $attributes[$key] = ''; //'$value';
+          }
+        }
+      }
+      else {
+        $cells = $row;
+      }
+
+      if (next($rows) === false) {
+        // Build row
+        $output .= ' <tbody class="tablesorter-no-sort"' . drupal_attributes($attributes) . '>';
+        $i = 0;
+        foreach ($cells as $cell) {
+          $cell = tablesort_cell($cell, $header, $ts, $i++);
+          $output .= _theme_table_cell($cell);
+        }
+        $output .= " </tbody>\n";
+      }
+      else {
+        if (count($cells)) {
+          // Add odd/even class
+          $class = $flip[$class];
+          if (isset($attributes['class'])) {
+            $attributes['class'] .= ' ' . $class;
+          }
+          else {
+            $attributes['class'] = $class;
+          }
+          //
+          $output .= ' <tr' . drupal_attributes($attributes) . '>';
+          $i = 0;
+          foreach ($cells as $cell) {
+            $cell = tablesort_cell($cell, $header, $ts, $i++);
+            $output .= _theme_table_cell($cell);
+          }
+          $output .= " </tr>";
+          // }
+        }
+      }
+      $counter = $counter + 1;
+    }
+    $output .= "</tbody>\n";
+  }
+
+  $output .= "</table>\n";
+  return $output;
+}
+
+function apw_country_theme_sub_tabs($tabId, $variables) {
+  $count = 1;
+  $tabbed_content = "";
+  $checked = "";
+  foreach ($variables as $key => $value) {
+    if (strpos($key, 'label') !== false) {
+      if ($count == 1) {
+        $checked = "checked";
+      }
+      else {
+        $checked = "";
+      }
+      $tabbed_content.=" <li>
+        <input type=\"radio\" name=\"$tabId\" id=\"$tabId$count\" $checked />
+         <label for=\"$tabId$count\">";
+
+      $tabbed_content.=$value;
+
+      $tabbed_content.="</label>";
+    }
+    if (strpos($key, 'tab') !== false) {
+      $tabbed_content.="<div id=\"tab-content$tabId$count\" class=\"tab-content\">";
+      $tabbed_content.=$value;
+      $tabbed_content.= "</div>
+    </li>";
+      // call css 
+      $graphs_no = count(explode("jQuery.apwRenderCountryEpidemiologicalChart(data", $value)) - 1;
+      if ($graphs_no == 3 || $graphs_no == 4) {
+        $height = (1000) . "px";
+      }
+      elseif ($graphs_no == 2 || $graphs_no == 1) {
+        $height = (520) . "px";
+      }
+      elseif ($graphs_no == 5 || $graphs_no == 6) {
+        $height = (1500) . "px";
+      }
+      elseif ($graphs_no == 7 || $graphs_no == 8) {
+        $height = (2000) . "px";
+      }
+      $stylefortabsheight = ".$tabId>li{
+      height:$height !important
+}";
+      // dsm("$tabId$count height $height ");
+      drupal_add_css($stylefortabsheight, 'inline');
+      $count++;
+    }
+  }
+
+  $sub_tabs = array(
+    'title' => t("Global Fund grants"),
+    'contents' => array('#markup' => " 
+<ul class=\"$tabId\">
+    $tabbed_content
+    </li>
+      
+  
+</ul>"),
+  );
+  // var_dump($tab1);
+
+  return $sub_tabs;
+}
+
+?>

@@ -1,0 +1,134 @@
+<?php
+
+include_once 'PerformanceAnalyzerImpl.php';
+
+function apw_performance_analyzer_node_view($node, $view_mode, $langcode) {
+
+    if('full' === $view_mode) {
+        if (1991 == $node->nid ||
+                3049 == $node->nid ||
+                3050 == $node->nid ||
+                3051 == $node->nid) {
+                    apw_performance_analyzer_custom_node_render($node);
+                }
+    }
+}
+
+function apw_performance_analyzer_custom_node_render($node) {
+            $node->content['tool_section'] = array (
+                  '#markup' => theme('entity_performance_analyzer'),
+                  '#weight' => 1,
+                );
+}
+
+function apw_performance_analyzer_theme() {
+    return array(
+        'entity_performance_analyzer' => array('variables' => NULL),
+    );
+}
+
+function apw_performance_analyzer_menu() {
+    $items['performance_analyzer/filter_entity'] = array(
+        'page callback' => 'pa_change_event_handler',
+        'type' => MENU_CALLBACK,
+        'access arguments' => array('access content'),
+    );
+    $items['performance_analyzer/analyze_selection'] = array(
+        'page callback' => 'pa_analyze_selection_handler',
+        'type' => MENU_CALLBACK,
+        'access arguments' => array('access content'),
+    );
+
+    return $items;
+}
+
+function pa_analyze_selection_handler() {
+    $analyzer_clazz = new PerformanceAnalyzerImpl();
+
+    echo json_encode($analyzer_clazz->analyze_selection(json_decode($_POST['grants']), $_POST['periodStart'], $_POST['ratingCounter']));
+}
+
+function pa_change_event_handler() {
+
+    if (empty($_POST['entityCol'])) {
+        $entities = _performance_analyzer_implementer_entity($_POST['entity']);
+    } else {
+        $entities = _performance_analyzer_implementer_entity($_POST['entity'], $_POST['entityCol']);
+    }
+
+    drupal_json_output(array('totalCount' => sizeof($entities), 'records' => $entities));
+}
+
+function _performance_analyzer_implementer_entity($entity, $prop = 'name') {
+
+    $entities = array();
+    $criterion = ' WHERE 1 = 1 ';
+    $parent_id_col = 'id';
+
+    if ('country' === $entity) {
+        $parent_id_col = 'region_id';
+
+        $criterion .= " AND region_id IN (" . implode(", ", json_decode($_POST["regionIds"])) . ") ";
+    }
+
+    if ('principal_recipient' === $entity) {
+        $parent_id_col = 'principal_recipient_type_id';
+
+        $join = " INNER JOIN gf_grant ON gf_grant.principal_recipient_id = principal_recipient.id ";
+
+        $criterion .= " AND principal_recipient_type_id IN (" . implode(", ", json_decode($_POST["prTypeIds"])) . ") ";
+
+        $criterion .= " AND gf_grant.country_id IN (" . implode(", ", json_decode($_POST["countryIds"])) . ") ";
+
+        $criterion .= " AND gf_grant.disease_component_id IN (" . implode(", ", json_decode($_POST["diseaseIds"])) . ") ";
+    }
+
+    if ('gf_grant' === $entity) {
+        $parent_id_col = 'principal_recipient_id';
+
+        $prs = json_decode($_POST["prIds"]);
+        if (empty($prs)) {
+            $prs = array(0);
+        }
+
+        $criterion .= " AND principal_recipient_id IN (" . implode(", ", $prs) . ") ";
+
+        $criterion .= " AND country_id IN (" . implode(", ", json_decode($_POST["countryIds"])) . ") ";
+
+        $criterion .= " AND disease_component_id IN (" . implode(", ", json_decode($_POST["diseaseIds"])) . ") ";
+    }
+
+    $sql = "SELECT DISTINCT " . $entity . ".id, " . $entity . '.' . $parent_id_col . ', ' . $entity . "." . $prop . " AS name FROM " . $entity . $join . $criterion . " ORDER BY " . $entity . "." . $prop;
+//var_dump($sql);
+    $result = db_query($sql);
+    foreach($result as $data) {
+        $obj = new stdClass();
+
+        $obj->id = $data->id;
+        $obj->name = $data->name;
+
+        if ('country' === $entity) {
+            $obj->parent_id = $data->region_id;
+        }
+        if ('principal_recipient' === $entity) {
+            $obj->parent_id = $data->principal_recipient_type_id;
+        }
+
+        if ('gf_grant' == $entity) {
+            $obj->parent_id = $data->principal_recipient_id;
+            
+            $sql = "SELECT count(id) valid_rating
+FROM progress_update
+WHERE pu_start_date IS NOT NULL AND pu_end_date IS NOT NULL AND  gf_grant_id = :grant_id
+AND rating is not null AND rating != '' AND rating != 'x' AND rating != 'NR'";
+
+            $rating_count = db_query($sql, array(':grant_id' => $obj->id))->fetchObject();
+
+            $obj->name = '<b>' . $obj->name . '</b>' . '  (' . $rating_count->valid_rating . ' rating' . ($rating_count->valid_rating > 1 ? 's)' : ')');
+        }
+
+        $entities[] = $obj;
+    }
+
+    return $entities;
+}

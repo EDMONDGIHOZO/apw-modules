@@ -1,0 +1,5 @@
+; $Id$
+name = GFO Article View
+description = Module that renders the GFO Article page and additional processing of the node type/content type
+package = APW Package
+core = 8.x

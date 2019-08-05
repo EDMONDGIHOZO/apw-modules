@@ -1,0 +1,40 @@
+<?php
+
+// $Id$
+/**
+ * @file
+ * Processes Blog content type
+ */
+
+function apw_social_plugin_node_view($node, $view_mode, $langcode) {
+if('full' === $view_mode) {
+        if ('blog' == $node->type) {
+
+            if (!$a3) {
+                $node->content['body'] = array('#value' => $content . _add_social_plugin_elements());
+            }
+        }
+    }
+}
+
+function _add_social_plugin_elements() {
+    global $language;
+
+    $locale = $language->language . '_' . strtoupper($language->language);
+    
+    return '<div style="padding:30px 0 10px 0">
+                    <!-- AddThis Button BEGIN -->
+<div class="addthis_toolbox addthis_default_style " style="float:right">
+<a href="http://www.addthis.com/bookmark.php?v=250&amp;username=xa-4d2c2bef083e6065" class="addthis_button_compact">Share</a>
+<span class="addthis_separator">|</span>
+<a class="addthis_button_preferred_1"></a>
+<a class="addthis_button_preferred_2"></a>
+<a class="addthis_button_preferred_3"></a>
+<a class="addthis_button_preferred_4"></a>
+</div>
+<script type="text/javascript" src="http://s7.addthis.com/js/250/addthis_widget.js#username=xa-4d2c2bef083e6065"></script>
+<!-- AddThis Button END -->
+<script src="http://connect.facebook.net/' . $locale . '/all.js#xfbml=1"></script><fb:like show_faces="true" width="450" action="recommend"></fb:like>
+
+                </div>';
+}

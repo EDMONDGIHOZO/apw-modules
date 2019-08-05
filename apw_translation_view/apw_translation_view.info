@@ -1,0 +1,5 @@
+; $Id$
+name = Translation handler
+description = Module that will be delegated with handling the translation.
+package = APW Package
+core = 7.x

@@ -1,0 +1,304 @@
+<?php
+
+/**
+ * @file aidspan_migrator.module
+ * TODO: Enter file description here.
+ */
+function aidspan_migrator_flush_caches() {
+  aidspan_migrator_register_migrations();
+}
+
+/**
+ * Register all D6->D7 migrations.
+ */
+function aidspan_migrator_register_migrations() {
+  /**
+   * Each migration being registered takes an array of arguments, some required
+   * and some optional. Start with the common arguments required by all - the
+   * source_connection (connection key, set up in settings.php, pointing to
+   * the Drupal 6 database) and source_version (major version of Drupal).
+   */
+  $common_arguments = array(
+    'source_connection' => 'legacy',
+    'source_version' => 6,
+  );
+
+  // Register migrations.
+  _aidspan_migrator_migrate_users($common_arguments);
+  _aidspan_migrator_migrate_forum_tags($common_arguments);
+  _aidspan_migrator_migrate_menu($common_arguments);
+  _aidspan_migrator_migrate_gfo_issues($common_arguments);
+  _aidspan_migrator_migrate_gfo_article($common_arguments);
+  _aidspan_migrator_migrate_related_news($common_arguments);
+  _aidspan_migrator_migrate_page($common_arguments);
+  _aidspan_migrator_migrate_publication($common_arguments);
+}
+
+function _aidspan_migrator_migrate_users($common_arguments) {
+  // The description and the migration machine name are also required arguments,
+  // which will be unique for each migration you register.
+  $arguments = $common_arguments + array(
+    'class_name' => 'GFOUserMigrationMapper',
+    'description' => t('Migration of users from Drupal 6'),
+    'machine_name' => 'Users',
+  );
+
+  // We just use the migrate_d2d D6 migration class as-is.
+  Migration::registerMigration($arguments['class_name'], $arguments['machine_name'], $arguments);
+}
+
+function _aidspan_migrator_migrate_forum_tags($common_arguments) {
+
+  // For vocabulary migrations, source_vocabulary and destination_vocabulary are
+  // required arguments. Note that in Drupal 6 vocabularies did not have machine
+  // names, so we use the vocabulary ID to uniquely identify them.
+  $vocabulary_arguments = array(
+    array(
+      'description' => t('Migration of Forums terms from Drupal 6'),
+      'machine_name' => 'Forums',
+      'source_vocabulary' => '1', // D6 Vocabulary ID
+      'destination_vocabulary' => 'vocabulary_1',
+    ),
+  );
+
+  // Again, we're using the migrate_d2d class directly.
+  // The soft dependency says that while we don't have to run the user migration
+  // first, we want to make sure it's listed first so the vocubularies are
+  // listed right ahead of the node migrations.
+  $common_vocabulary_arguments = $common_arguments + array(
+    'class_name' => 'DrupalTerm6Migration',
+    'soft_dependencies' => array('Users'),
+  );
+  foreach ($vocabulary_arguments as $arguments) {
+    $arguments += $common_vocabulary_arguments;
+    Migration::registerMigration($arguments['class_name'], $arguments['machine_name'], $arguments);
+  }
+}
+
+function _aidspan_migrator_migrate_menu($common_arguments) {
+  // Menu migrations -- same requirements as users
+  $menu_arguments = $common_arguments + array(
+    'description' => t('Migration of menus from Drupal 6'),
+    'machine_name' => 'Menu',
+  );
+
+  // We just use the migrate_d2d D6 migration class as-is.
+  Migration::registerMigration('DrupalMenu6Migration', $menu_arguments['machine_name'], $menu_arguments);
+
+  // Menu links migrations -- basic requirements, plus must set up menu dependency
+  $menu_links_arguments = $common_arguments + array(
+    'class_name' => 'MenuMigrationMapper',
+    'description' => t('Migration of menu links from Drupal 6'),
+    'machine_name' => 'Menu_links',
+    'node_migrations' => array('Pages'),
+    'menu_migration' => $menu_arguments['machine_name'],
+  );
+  Migration::registerMigration($menu_links_arguments['class_name'], $menu_links_arguments['machine_name'], $menu_links_arguments);
+}
+
+function _aidspan_migrator_migrate_gfo_issues($common_arguments) {
+
+  $issue_arguments = array(
+    array(
+      'class_name' => 'GFOIssueMigrationMapper',
+      'description' => 'Migrate gfo issue nodes',
+      'machine_name' => 'GFO_Issue',
+      'source_type' => 'gfo_issue', // Change this to your content type.
+      'destination_type' => 'gfo_issue',
+    )
+  );
+  $common_node_arguments = $common_arguments + array(
+    'user_migration' => 'Users',
+  );
+  foreach ($issue_arguments as $arguments) {
+    $arguments = array_merge_recursive($arguments, $common_node_arguments);
+    Migration::registerMigration($arguments['class_name'], $arguments['machine_name'], $arguments);
+  }
+}
+
+function _aidspan_migrator_migrate_related_news($common_arguments) {
+
+  $related_news_arguments = array(
+    array(
+      'class_name' => 'RelatedNewsMigrationMapper',
+      'description' => 'Migrate related news nodes',
+      'machine_name' => 'Related_News',
+      'source_type' => 'related_news',
+      'destination_type' => 'related_news',
+    )
+  );
+  $common_node_arguments = $common_arguments + array(
+    'user_migration' => 'Users',
+  );
+  foreach ($related_news_arguments as $arguments) {
+    $arguments = array_merge_recursive($arguments, $common_node_arguments);
+    Migration::registerMigration($arguments['class_name'], $arguments['machine_name'], $arguments);
+  }
+}
+
+function _aidspan_migrator_migrate_publication($common_arguments) {
+
+  $publication_arguments = array(
+    array(
+      'class_name' => 'PublicationsMigrationMapper',
+      'description' => 'Migrate related news nodes',
+      'machine_name' => 'Publications',
+      'source_type' => 'publication',
+      'destination_type' => 'publication',
+    )
+  );
+  $common_node_arguments = $common_arguments + array(
+    'user_migration' => 'Users',
+  );
+  foreach ($publication_arguments as $arguments) {
+    $arguments = array_merge_recursive($arguments, $common_node_arguments);
+    Migration::registerMigration($arguments['class_name'], $arguments['machine_name'], $arguments);
+  }
+}
+
+function _aidspan_migrator_migrate_gfo_article($common_arguments) {
+
+  $gfo_arguments = array(
+    array(
+      'class_name' => 'GFOArticleMigrationMapper',
+      'description' => t('Migration of GFO articles from Drupal 6'),
+      'machine_name' => 'GFO_Article',
+      'source_type' => 'gfo_article', // Change this to your content type.
+      'destination_type' => 'gfo_article',
+      'dependencies' => array('GFO_Issue'),
+    )
+  );
+  $common_node_arguments = $common_arguments + array(
+    'user_migration' => 'Users',
+  );
+  foreach ($gfo_arguments as $arguments) {
+    $arguments = array_merge_recursive($arguments, $common_node_arguments);
+    Migration::registerMigration($arguments['class_name'], $arguments['machine_name'], $arguments);
+  }
+}
+
+function _aidspan_migrator_migrate_page($common_arguments) {
+  $page_arguments = array(
+    array(
+      'class_name' => 'PageNodeMigrationMapper',
+      'description' => t('Migration of Pages from Drupal 6'),
+      'machine_name' => 'Pages',
+      'source_type' => 'page', // Change this to your content type.
+      'destination_type' => 'page',
+    )
+  );
+  $common_node_arguments = $common_arguments + array(
+    'user_migration' => 'Users',
+  );
+  foreach ($page_arguments as $arguments) {
+    $arguments = array_merge_recursive($arguments, $common_node_arguments);
+    Migration::registerMigration($arguments['class_name'], $arguments['machine_name'], $arguments);
+  }
+}
+
+function _aidspan_migrator_files($common_arguments) {
+  
+}
+
+/**
+ * Implements hook_help().
+ */
+function aidspan_migrator_help($path, $arg) {
+  switch ($path) {
+    // Main module help for the block module
+    case 'admin/help#block':
+      return '<p>' . t('Blocks are boxes of content rendered into an area, or region, of a web page. The default theme Bartik, for example, implements the regions "Sidebar first", "Sidebar second", "Featured", "Content", "Header", "Footer", etc., and a block may appear in any one of these areas. The <a href="@blocks">blocks administration page</a> provides a drag-and-drop interface for assigning a block to a region, and for controlling the order of blocks within regions.', array('@blocks' => url('admin/structure/block'))) . '</p>';
+
+    // Help for another path in the block module
+    case 'admin/structure/block':
+      return '<p>' . t('This page provides a drag-and-drop interface for assigning a block to a region, and for controlling the order of blocks within regions. Since not all themes implement the same regions, or display regions in the same way, blocks are positioned on a per-theme basis. Remember that your changes will not be saved until you click the <em>Save blocks</em> button at the bottom of the page.') . '</p>';
+  }
+}
+
+/**
+ * Implements hook_cron().
+ * incase a cron is needed to run migrations daily
+
+  function aidspan_migrator_cron() {
+  // Short-running operation example, not using a queue:
+  // Delete all expired records since the last cron run.
+  $expires = variable_get('mymodule_cron_last_run', REQUEST_TIME);
+  db_delete('mymodule_table')
+  ->condition('expires', $expires, '>=')
+  ->execute();
+  variable_set('mymodule_cron_last_run', REQUEST_TIME);
+
+  // Long-running operation example, leveraging a queue:
+  // Fetch feeds from other sites.
+  $result = db_query('SELECT * FROM {aggregator_feed} WHERE checked + refresh < :time AND refresh <> :never', array(
+  ':time' => REQUEST_TIME,
+  ':never' => AGGREGATOR_CLEAR_NEVER,
+  ));
+  $queue = DrupalQueue::get('aggregator_feeds');
+  foreach ($result as $feed) {
+  $queue->createItem($feed);
+  }
+  }
+
+
+  /**
+ * Implements hook_mail() incase need to mail result of migrate 
+
+  function aidspan_migrator_mail($key, &$message, $params) {
+  $account = $params['account'];
+  $context = $params['context'];
+  $variables = array(
+  '%site_name' => variable_get('site_name', 'Drupal'),
+  '%username' => format_username($account),
+  );
+  if ($context['hook'] == 'taxonomy') {
+  $entity = $params['entity'];
+  $vocabulary = taxonomy_vocabulary_load($entity->vid);
+  $variables += array(
+  '%term_name' => $entity->name,
+  '%term_description' => $entity->description,
+  '%term_id' => $entity->tid,
+  '%vocabulary_name' => $vocabulary->name,
+  '%vocabulary_description' => $vocabulary->description,
+  '%vocabulary_id' => $vocabulary->vid,
+  );
+  }
+
+  // Node-based variable translation is only available if we have a node.
+  if (isset($params['node'])) {
+  $node = $params['node'];
+  $variables += array(
+  '%uid' => $node->uid,
+  '%node_url' => url('node/' . $node->nid, array('absolute' => TRUE)),
+  '%node_type' => node_type_get_name($node),
+  '%title' => $node->title,
+  '%teaser' => $node->teaser,
+  '%body' => $node->body,
+  );
+  }
+  $subject = strtr($context['subject'], $variables);
+  $body = strtr($context['message'], $variables);
+  $message['subject'] .= str_replace(array("\r", "\n"), '', $subject);
+  $message['body'][] = drupal_html_to_text($body);
+  }
+
+
+
+  /**
+ * Implements hook_migrate_overview().
+ */
+function aidspan_migrator_migrate_overview() {
+  return t('<p>Listed below are all the migration processes defined for migration
+    of our old Aidspan website site on Drupal 6 to Drupal 7.</p>
+ ');
+}
+
+/**
+ * Implements hook_migrate_api().
+ */
+function aidspan_migrator_migrate_api() {
+  $api = array(
+    'api' => 2,
+  );
+  return $api;
+}

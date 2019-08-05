@@ -1,0 +1,132 @@
+<?php
+
+//DROP TABLE IF EXISTS `page_link` ;
+//
+//CREATE  TABLE IF NOT EXISTS `page_link` (
+//  `id` INT NOT NULL AUTO_INCREMENT ,
+//  `uri` VARCHAR(255) NOT NULL ,
+//  `title` VARCHAR(255) NULL ,
+//  PRIMARY KEY (`id`) ,
+//  UNIQUE INDEX `url_UNIQUE` (`uri` ASC) )
+//ENGINE = InnoDB DEFAULT CHARSET=utf8;
+//
+//DROP TABLE IF EXISTS `page_statistic` ;
+//
+//CREATE  TABLE IF NOT EXISTS `page_statistic` (
+//  `id` INT NOT NULL AUTO_INCREMENT ,
+//  `page_link_id` INT NOT NULL ,
+//  `visit_date` DATE NOT NULL ,
+//  `view_count` INT NOT NULL ,
+//  PRIMARY KEY (`id`) ,
+//  INDEX `fk_page_statistic_page_link` (`page_link_id` ASC) ,
+//  UNIQUE INDEX `page_link_id_UNIQUE` (`page_link_id`, `visit_date` ASC) ,
+//  CONSTRAINT `fk_page_statistic_page_link`
+//    FOREIGN KEY (`page_link_id` )
+//    REFERENCES `page_link` (`id` )
+//    ON DELETE NO ACTION
+//    ON UPDATE NO ACTION)
+//ENGINE = InnoDB DEFAULT CHARSET=utf8;
+
+// $Id$
+//<<<<<<< HEAD
+//function apw_zstatistic_exit() {
+  //     _log_page_view($_SERVER[REQUEST_URI], drupal_get_title());
+//}
+
+//=======
+//>>>>>>> 929bb25b48445d5942238fa3ac4436d481c06809
+function apw_zstatistic_node_view($node, $view_mode, $langcode) {
+    if('full' === $view_mode) {
+        _log_page_view(urldecode($_SERVER["REQUEST_URI"]), drupal_get_title());
+    }
+}
+
+
+function _log_page_view($uri, $title) {
+
+    if('/page/home' == $uri || '/index.php' == $uri || '/node/2' == $uri) {
+        $uri = '/';
+    }
+
+    $page_result = db_query("SELECT * FROM page_link WHERE uri = :uri", array(':uri' => $uri));
+    $page = $page_result->fetchObject();
+    
+    if (empty($page)) {
+        $validated_url = rtrim($uri, '/');
+	
+	//lets us check if this node was accessed through it's node id i.e /node/XXXX
+	$sql = "SELECT alias FROM web_url_alias WHERE source = :src";
+	$alias_result = db_query($sql, array(':src' => substr($validated_url, 1)));
+	$url_alias = $alias_result->fetchObject();
+	
+	if(!empty($url_alias)) {
+		$page_result = db_query("SELECT * FROM page_link WHERE uri = :uri", array(':uri' => '/' . $url_alias->alias));
+		$page = $page_result->fetchObject();	
+	}
+}
+    
+    if(empty($page)) {
+		//means that this page has never been logged
+		$sql = "INSERT INTO page_link (uri, title) VALUES (:uri, :title)";
+
+		db_query($sql, array(":uri" => $uri, ":title" => $title));
+
+		$page = db_query('SELECT LAST_INSERT_ID() id')->fetchObject();
+	}
+
+    $page_id = $page->id;
+
+    $todays_date = date('Y-m-d');
+
+    $count_result = db_query("SELECT id, page_link_id, visit_date, view_count FROM page_statistic WHERE page_link_id = :link_id AND visit_date = :visit_date", array(':link_id' => $page_id, ':visit_date' => $todays_date));
+    $view = $count_result->fetchObject();
+
+    if (empty($view)) {
+        //means we don't have any stat for this page for this day
+        $view_count = 1;
+        $sql = "INSERT INTO page_statistic (page_link_id, visit_date, view_count) VALUES (:p_id, :visit_date, :v_count)";
+
+        db_query($sql, array(":p_id" => $page_id, ":visit_date" => $todays_date, ":v_count" => $view_count));
+    } else {
+        $view_count = $view->view_count + 1;
+
+        $sql = "UPDATE page_statistic SET view_count = :v_count WHERE id = :ps_id";
+
+        db_query($sql, array(":v_count" => $view_count, ":ps_id" => $view->id));
+    }
+}
+
+function _log_publication_download($filepath, $filename) {
+    
+    $publications_result = db_query("SELECT * FROM publication_download WHERE filepath = :filepath", array(':filepath' => $filepath));
+    $publication = $publications_result->fetchObject(); 
+
+    if(empty($publication)) {
+		$sql = "INSERT INTO publication_download (filepath, filename) VALUES (:filepath, :filename)";
+
+		db_query($sql, array(":filepath" => $filepath, ":filename" => $filename));
+
+		$publication = db_query('SELECT LAST_INSERT_ID() id')->fetchObject();
+	}
+
+    $publication_id = $publication->id;
+
+    $todays_date = date('Y-m-d');
+
+    $count_result = db_query("SELECT id, publication_download_id, download_date, download_count FROM publication_download_statistic WHERE publication_download_id = :publication_download_id AND download_date = :download_date", array(':publication_download_id' => $publication_id, ':download_date' => $todays_date));
+    $download = $count_result->fetchObject();
+
+    if (empty($download)) {
+        //means we don't have any stat for this page for this day
+        $view_count = 1;
+        $sql = "INSERT INTO publication_download_statistic (publication_download_id, download_date, download_count) VALUES (:p_id, :download_date, :d_count)";
+        db_query($sql, array(":p_id" => $publication_id, ":download_date" => $todays_date, ":d_count" => $view_count));
+     
+    } else {
+        $download_count = $download->download_count + 1;
+
+        $sql = "UPDATE publication_download_statistic SET download_count = :d_count WHERE id = :ps_id";
+
+        db_query($sql, array(":d_count" => $download_count, ":ps_id" => $download->id));
+    }
+}

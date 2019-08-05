@@ -1,0 +1,191 @@
+<?php
+
+// $Id$
+/**
+ * @file
+ * Processes GFO article content type
+ */
+
+function apw_gfo_article_view_node_view($node, $view_mode, $langcode) {
+
+    if('full' === $view_mode) {
+
+        if ('gfo_article' == $node->type) {
+            
+            if (empty($node->field_article_issue_id)) {//this is a GFO Live article
+                global $language;
+                
+                //drupal_set_breadcrumb(
+                  //      array(l(i18nstrings('menu:item:305:title', 'Home', $language->language), 'node/2'),
+                    //        l(i18nstrings('menu:item:1907:title', 'Global Fund Observer', $language->language), 'node/16'), 
+                      //      l(i18nstrings('menu:item:2482:title', 'GFO Live', $language->language), 'node/' . _translation_nodelink(1233)), $node->title));
+                $navigation = theme('gfo_article_navigator', array('sequences' => array(), 'article_number' => NULL));
+            } else {
+                
+                $sequences = _gfo_article_navigator($node->field_article_issue_id['und'][0]['nid'], $node->field_article_number['und'][0]['value']);
+
+                $navigation = theme('gfo_article_navigator', array('sequences' => $sequences, 'article_number' => $node->field_article_number['und'][0]['value']));
+            }
+            
+            if($node->field_article_type_id['und'][0]['value']) {
+                $node->article_type = db_query("SELECT name FROM web_gfo_article_type WHERE id = :a_id", array(":a_id" => $node->field_article_type_id['und'][0]['value']))->fetchField();
+            }
+            
+            $node->article_navigation = $navigation;                
+
+            //lets get the translated nodes
+            $node->translated_links = _get_translated_links($node->nid);
+        }
+    }
+}
+
+function _get_translated_links($nid) {
+    //this function is going to be delegated with building up the translated links of GFO articles, when applicable
+    global $language;
+
+    $translated_nodes = _retrieve_all_translation_nodes($nid);
+    
+    $links = array();
+    
+    //first check which language the site is being viewed in
+    if('en' === $language->language) {
+        foreach($translated_nodes as $translated_node ) {
+            if('fr' == $translated_node->language) {
+                $links[] = "Read this article " . l("in French.", 'fr/' . drupal_get_path_alias('node/' . $translated_node->nid, 'fr')) . " Lire l'article " . l("en français.", 'fr/' . drupal_get_path_alias('node/' . $translated_node->nid, 'fr'));
+            }
+            if('es' == $translated_node->language) {
+                $links[] = "Read this article " . l("in Spanish.", 'es/' . drupal_get_path_alias('node/' . $translated_node->nid, 'es')) . " Lea el articulo " . l("en espagnol.", 'es/' . drupal_get_path_alias('node/' . $translated_node->nid, 'es'));
+            }
+            if('ru' == $translated_node->language) {
+                $links[] = "Read this article " . l("in Russian.", 'ru/' . drupal_get_path_alias('node/' . $translated_node->nid, 'ru')) . " Читайте на " . l("Английском.", 'ru/' . drupal_get_path_alias('node/' . $translated_node->nid, 'ru'));
+            }
+        }
+    }
+    
+    if('fr' === $language->language) {
+        foreach($translated_nodes as $translated_node ) {
+            if('en' == $translated_node->language) {
+                $links[] = " Lire l'article " . str_replace('/fr', '', l("en anglais.", drupal_get_path_alias('node/' . $translated_node->nid, 'en'))) . " Read this article " . str_replace('/fr', '', l("in English.", drupal_get_path_alias('node/' . $translated_node->nid, 'en')));
+            }
+            if('es' == $translated_node->language) {
+                $links[] = " Lire l'article " . str_replace('/fr', '', l("en espagnol.", 'es/' . drupal_get_path_alias('node/' . $translated_node->nid, 'es'))) . " Lea el articulo " . str_replace('/fr', '', l("en Español.", 'es/' . drupal_get_path_alias('node/' . $translated_node->nid, 'es')));
+            }
+            if('ru' == $translated_node->language) {
+                $links[] = " Lire l'article " . str_replace('/fr', '', l("en russe.", 'ru/' . drupal_get_path_alias('node/' . $translated_node->nid, 'ru'))) . " Читайте на " . str_replace('/fr', '', l("Русский.", 'ru/' . drupal_get_path_alias('node/' . $translated_node->nid, 'ru')));
+            }
+        }
+    }
+    
+    if('es' === $language->language) {
+        foreach($translated_nodes as $translated_node ) {
+            if('en' == $translated_node->language) {
+                $links[] = " Lea el articulo " . str_replace('/es', '', l("en Ingles.", drupal_get_path_alias('node/' . $translated_node->nid, 'en'))) . " Read this article " . str_replace('/es', '', l("in English.", drupal_get_path_alias('node/' . $translated_node->nid, 'en')));
+            }
+            if('fr' == $translated_node->language) {
+                $links[] = " Lea el articulo " . str_replace('/es', '', l("en Francés.", 'fr/' . drupal_get_path_alias('node/' . $translated_node->nid, 'fr'))) . " Lire l'article " . str_replace('/es', '', l("en français.", 'fr/' . drupal_get_path_alias('node/' . $translated_node->nid, 'fr')));
+            }
+            if('ru' == $translated_node->language) {
+                $links[] = " Lea el articulo " . str_replace('/es', '', l("en Ruso.", 'ru/' . drupal_get_path_alias('node/' . $translated_node->nid, 'ru'))) . " Читайте на " . str_replace('/es', '', l("Русский.", 'ru/' . drupal_get_path_alias('node/' . $translated_node->nid, 'ru')));
+            }
+        }
+    }
+    
+    if('ru' === $language->language) {
+        foreach($translated_nodes as $translated_node ) {
+            if('en' == $translated_node->language) {
+                $links[] = " Читайте на " . str_replace('/ru', '', l("Английском.", drupal_get_path_alias('node/' . $translated_node->nid, 'en'))) . " Read this article " . str_replace('/ru', '', l("in English.", drupal_get_path_alias('node/' . $translated_node->nid, 'en')));
+            }
+            if('fr' == $translated_node->language) {
+                $links[] = " Читайте на " . str_replace('/ru', '', l("французском.", 'fr/' . drupal_get_path_alias('node/' . $translated_node->nid, 'fr'))) . " Lire l'article " . str_replace('/ru', '', l("en français.", 'fr/' . drupal_get_path_alias('node/' . $translated_node->nid, 'fr')));
+            }
+            if('es' == $translated_node->language) {
+                $links[] = " Читайте на " . str_replace('/ru', '', l("испанском.", 'es/' . drupal_get_path_alias('node/' . $translated_node->nid, 'es'))) . " Lea el articulo " . str_replace('/ru', '', l("en Español.", 'es/' . drupal_get_path_alias('node/' . $translated_node->nid, 'es')));
+            }
+        }
+    }
+
+    return $links;
+    
+//French
+//Lire l'article en français (Read article in French)
+//lire l'article en espagnol (Read article in Spanish)
+//lire l'article en russe (Read article in Russian)
+//lire l'article en anglais (Read article in English)
+
+//Spanish
+//Lea el articulo en Español (Read article in Spanish)
+//Lea el articulo en Ingles (Read article in English)
+//Lea el articulo en Francés (Read article in French)
+//Lea el articulo en Ruso (Read article in Russian)
+
+//Russian
+//Читайте на Русский (Read in Russian)
+//Читайте на Английском (Read in English)
+//Читайте на французском (Read in French)
+//Читайте на испанском (Read in Spanish)
+}
+
+function _retrieve_all_translation_nodes($nid) {
+    
+    // fetch all the translated nodes
+    $result = db_query("SELECT n2.nid, n2.language 
+       FROM {node} n1, {node} n2
+       WHERE n1.tnid = n2.tnid
+       AND n1.tnid != 0
+       and n2.status = 1
+       AND n1.nid = :nid", array(':nid' => $nid));
+    
+    $translated_nodes = array();
+            
+    foreach ($result as $record) {
+            $translated_nodes[] = $record;
+        }   
+        
+    return $translated_nodes;
+}
+
+function apw_gfo_article_view_theme() {
+    return array(
+        'gfo_article_navigator' => array('variables' => array('sequences' => NULL, 'article_number' => NULL))
+    );
+}
+
+function _gfo_article_navigator($issue_id, $article_number) {
+
+    global $language;
+    
+    $sql = "SELECT wn.nid, 
+a_number.field_article_number_value article_number
+FROM web_node wn
+INNER JOIN web_field_data_field_article_issue_id a_issue ON a_issue.entity_id = wn.nid
+INNER JOIN web_field_data_field_article_number a_number ON a_number.entity_id = wn.nid
+WHERE a_issue.field_article_issue_id_nid  = " . $issue_id .
+           " AND a_number.field_article_number_value != " . $article_number .
+           " AND wn.language = '" . $language->language . "' " .
+            " ORDER BY a_number.field_article_number_value";
+
+    $result = db_query($sql);
+
+    $article_sequence = array();
+    $i = 0;
+    foreach ($result as $data) {
+
+        $article_sequence[$i] = $data;
+
+        $i++;
+    }
+
+    return $article_sequence;
+}
+
+function _gfo_article_type_renderer($type_id) {
+
+    $sql = "SELECT name FROM {gfo_article_type}
+WHERE id =" . $type_id;
+
+    $result = db_query($sql);
+
+    $data = $result->fetchObject();
+
+    return $data->name;
+}

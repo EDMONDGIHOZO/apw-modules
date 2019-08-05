@@ -1,0 +1,211 @@
+<?php
+
+$GLOBALS['feedbackmessage_fr'] = ' 
+  
+Vous avez été ajouté à notre liste de diffusion, pour vous tenir à jour avec les dernières nouvelles du Fonds mondial. Si vous souhaitez vous désinscrire de la liste de diffusion, cliquer sur le lien de désabonnement au bas de la newsletter.
+
+Merci.
+
+- Équipe Aidspan';
+
+function apw_gfo_url_subscription_menu() {
+
+  $items = array();
+  // check if valid email load successfull subscribe page
+  // valid address
+  $items['ofm_subscribe/%'] = array(
+    'title' => t('OFM Subscription'),
+    'page callback' => 'apw_gfo_url_subscription_page',
+    'page arguments' => array(1),
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+
+
+  // else load page to request them to subscribe 
+  return $items;
+}
+
+function apw_gfo_url_subscription_page($argument1) {
+   $argument1=substr(base64_decode($argument1), 16);
+  if (filter_var($argument1, FILTER_VALIDATE_EMAIL)) {
+    //subscribe user 
+    apw_gfo_url_ofm_subscription_processor($argument1) ;
+    
+    return "<h3>Ton addresse email " . $argument1 . " est inscrit </h3>";
+  }
+  else {
+    return "<h3>Ton addresse email " . $argument1 . " est souscrit invalide. Abonnez-vous sur ce"
+        . "<a href='/apw_gfo_subscribe/nojs/test/form' title='Subscribe'>lien</a> "
+        . " </h3>";
+  }
+}
+    
+function _get_unique_username($name, $uid = 0) {
+  // Strip illegal characters.
+  $name = preg_replace('/[^\x{80}-\x{F7} a-zA-Z0-9@_.\'-]/', '', $name);
+
+  // Strip leading and trailing spaces.
+  $name = trim($name);
+
+  // Convert any other series of spaces to a single underscore.
+  $name = preg_replace('/ +/', '_', $name);
+
+  // If there's nothing left use a default.
+  $name = ('' === $name) ? t('user') : $name;
+
+  // Truncate to reasonable size.
+  $name = (drupal_strlen($name) > (USERNAME_MAX_LENGTH - 10)) ? drupal_substr($name, 0, USERNAME_MAX_LENGTH - 11) : $name;
+
+  // Iterate until we find a unique name.
+  $i = 0;
+
+  do {
+   $new_name = empty($i) ? $name : $name . '_' . $i;
+   $query = db_select('users', 'u');
+
+  $found = $query->fields('u', array('uid'))->condition('u.name', $new_name)->execute()->fetchField();
+  //$found = db_result(db_query_range("SELECT uid from {users} WHERE uid <> %d AND name = '%s'", $uid, $new_name, 0, 1));;
+   $i++;
+  } while (!empty($found));
+
+  return $new_name;
+}
+function _get_users_gfo_language_subcription() { 
+  db_set_active('default_no_prefix');
+  $query = db_select('system_user_has_event_type', 'suset');
+  $query->innerJoin('event_type', 'et', 'suset.event_type_id = et.id');
+  $query->fields('suset', array('event_type_id'));
+  $query->condition('et.group_text', 'GFO');
+  $query->condition('suset.system_user_id', -1);
+  $result = $query->execute();
+  $event_type_ids = array();
+  while ($data = $result->fetchAssoc()) {
+    $event_type_ids[] = $data['event_type_id'];
+  } 
+  return $event_type_ids;
+}
+
+function apw_gfo_url_ofm_subscription_load_user_by_mail($mail) {
+    
+  $query = db_select('users', 'u');
+
+  $uid = $query->fields('u', array('uid'))->condition('u.mail', $mail)->execute()->fetchField();
+
+  if ($uid) {
+
+    return user_load(array('uid' => $uid), TRUE)->uid;
+  }
+  else {
+    return FALSE;
+  }
+}
+
+
+
+function apw_gfo_url_ofm_subscription_mail($from = 'default_from', $to, $subject, $message) {
+  $my_module = 'apw_gfo_subscribe';
+  $my_mail_token = microtime();
+  if ($from == 'default_from') {
+    // Change this to your own default 'from' email address.
+    $from = variable_get('system_mail', 'webmaster@aidspan.org');
+  }
+  $message = array(
+    'id' => $my_module . '_' . $my_mail_token,
+    'to' => $to,
+    'subject' => $subject,
+    'body' => array($message),
+    'headers' => array(
+      'From' => $from,
+      'Sender' => $from,
+      'Return-Path' => $from,
+    ),
+  );
+  $system = drupal_mail_system($my_module, $my_mail_token);
+  $message = $system->format($message);
+  if ($system->mail($message)) {
+    return TRUE;
+  }
+  else {
+    return FALSE;
+  }
+}
+
+function apw_gfo_url_ofm_subscription_processor($mail) {
+
+  // get user id from email
+  $ofm_user_id=apw_gfo_url_ofm_subscription_load_user_by_mail($mail);
+  if($ofm_user_id==0){
+  // if user id is null create user 
+  $user_name =strstr($mail, '@', true); 
+  $user_name=_get_unique_username($user_name, $ofm_user_id);
+  $fields = array(
+    'name' => $user_name,
+    'mail' => $mail,
+    'pass' => user_password(8),
+    'status' => 1,
+  );
+  $fields['roles'] = array('authenticated user');
+  $account = user_save('', $fields);
+  $account->password = $fields['pass'];
+  apw_gfo_url_ofm_subscription_mail('default_from', $mail, 'Merci pour votre inscription à notre newsletter.', "<br/><br/>" . $GLOBALS['feedbackmessage_fr']);
+     
+      $ofm_user_id= $account->uid;
+// get user id created add to system had event id using 10
+  }
+     db_set_active('default_no_prefix');
+    db_delete('system_user_has_event_type')->condition('system_user_id', $ofm_user_id)->condition('event_type_id', 10)->execute();
+
+    db_insert('system_user_has_event_type')
+        ->fields(array(
+          'system_user_id' => $ofm_user_id,
+          'event_type_id' => 10,
+          'country_id' => 0,
+          'date_created' => array(
+            'timestamp' => date("Y-m-d H:i:s", time()), //<- this
+          ),
+          'last_updated' => array(
+            'timestamp' => date("Y-m-d H:i:s", time()))
+        ))->execute();
+      db_set_active();
+      $query = db_select('user_detail', 'u');
+ $uid = $query->fields('u', array('user_id'))->condition('u.user_id', $ofm_user_id)->execute()->fetchField();
+ if (!($uid)) {
+  db_insert('user_detail')->fields(array(
+           'user_id' => $ofm_user_id,
+           'full_name'=>$mail,
+            'description' => NULL,
+            'resident_country_id' => 0,
+            'can_use_apw' => 0,
+            'alert_frequency' => 'never'
+        ))->execute();
+  }
+}
+
+/**
+ * Display help and module information
+ * @param path which path of the site we're displaying help
+ * @param arg array that holds the current path as would be returned from arg() function
+ * @return help text for the path
+ */
+function apw_gfo_url_subscription_help($path, $arg) {
+  $output = '';  //declare your output variable
+  switch ($path) {
+    case "admin/help#apw_gfo_url_subscription":
+      $output = '<p>' . t("Enables OFM link subscribe") . '</p>';
+      break;
+  }
+  return $output;
+}
+
+// function apw_gfo_url_subscription
+
+/**
+ * Valid permissions for this module
+ * @return array An array of valid permissions for the onthisdate module
+ */
+function apw_gfo_url_subscription_perm() {
+  return array('access apw_gfo_url_subscription');
+}
+
+// function apw_gfo_url_subscription_perm()

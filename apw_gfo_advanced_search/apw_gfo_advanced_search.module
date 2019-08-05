@@ -1,0 +1,112 @@
+<?php
+ 
+function apw_gfo_advanced_search_facet_items_alter(&$build, &$settings) {
+      //dsm($settings->facet);
+      if ($settings->facet == "field_article_type_id") {
+
+     $values = array();
+    $mysqli = new mysqli("localhost", "root", "aIdspan008!", "apw2_production");
+    $result = $mysqli->query("SELECT id, name FROM web_gfo_article_type");
+     while ($row = $result->fetch_object()) {
+	    $values[$row->id] = $row->name;
+    }
+        foreach($build as $key => $item) {
+          $build[$key]["#markup"] = drupal_ucfirst($values[$item["#markup"]]);
+        }
+      }
+    }
+/**
+function apw_gfo_advanced_search_form_alter(&$form, &$form_state, $form_id) {
+//var_dump($form['#parameters']);die();
+//views-exposed-form-published-gfo-issue-view-page-1;
+    if ('views-exposed-form-gfo-advanced-search-page-1' == $form['#id']) {
+        // Change the text on the submit button
+        $form['submit']['#value'] = t('Search');
+
+        //add reset button
+        $form['reset'] = array(
+            '#type' => 'markup',
+            '#value' => '<input ' . drupal_attributes(array('type' => 'button', 'value' => t('Reset'))) . 'class="form-submit" onClick="window.location = \'' . url('./page/gfo-advanced-search') . '\';" />',
+            '#weight' => 19,
+        );
+    }
+
+    if ('views-exposed-form-published-gfo-issue-view-page-1' == $form['#id']) {
+        // Change the text on the submit button
+        $form['submit']['#value'] = t('Search');
+    }
+
+    if ('search_block_form' == $form_id) {
+        $form['search_block_form']['#title'] = t('Search');
+        $form['submit']['#value'] = '';
+        //$form['#redirect'] = FALSE;
+    }
+
+    if ('search_form' == $form_id) {
+        if ($form['#parameters'][3] && false !== strpos($form['#parameters'][3], 'type:gfo_article ')) {
+            //$form['#submit'] = array('apw_gfo_advanced_search_form_submit');
+            //$form['#parameters'][3] = str_replace('type:gfo_article ', '', $form['#parameters'][3]);
+            //var_dump($form);
+            //die();
+            $form['advanced_search_link'] = array(
+                '#type' => 'markup',
+                '#value' => theme('gfo_advanced_search_link', 'page/gfo_advanced_search'),
+                '#prefix' => '<div style="padding-top:5px;padding-bottom:5px">',
+                '#suffix' => '</div>',
+            );
+        }
+    }
+
+    if ('comment_form' == $form_id) {
+        $form['submit']['#value'] = t('Submit');
+    }
+}
+**/
+function apw_gfo_advanced_search_theme() {
+    return array(
+        'gfo_advanced_search_link' => array('arguments' => array('link' => NULL))
+    );
+}
+
+/*
+ * Implementation of hook_nodeapi().
+ */
+
+function apw_gfo_advanced_search_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
+
+    if ('view' == $op && $node->build_mode === NODE_BUILD_NORMAL) {
+
+        $content = $node->content['body']['#value'];
+
+        if (1234 == $node->nid
+                || 1605 == $node->nid
+                || 1606 == $node->nid
+                || 1607 == $node->nid) {//this is the gfo search page
+            $node->content['body'] = array('#value' => $content . views_embed_view('gfo_advanced_search', 'page_1'));
+        }
+    }
+}
+ 
+function apw_gfo_advanced_search_form_alter(&$form, &$form_state, $form_id) {
+  
+  if ($form_id == 'search_form' ||  $form_id == 'search_block_form') {
+   
+    $form['#submit'][] = 'search_form_submit_function';
+  }
+  if ($form_id == 'custom_search_blocks_form_1') {
+      $form['#submit'][] = 'search_form_submit_function';
+  }
+  
+}
+
+function search_form_submit_function(&$form, &$form_state) {
+  if(isset( $form_state['values']['search_block_form'])){
+  $search_str = $form_state['values']['search_block_form'];
+  }
+  else{
+  $search_str = $form_state['values']['custom_search_blocks_form_1'];
+  }
+  $form_state['rebuild'] = TRUE;
+  drupal_goto('page/gfo-search', array('query' => array('search_api_views_fulltext' => $search_str)));
+}
+ 

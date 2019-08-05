@@ -1,0 +1,5 @@
+; $Id$
+name = APW social plugin
+description = Module add the external elements that are used in sharing of the site content.
+package = APW Package
+core = 7.x

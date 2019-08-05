@@ -1,0 +1,6 @@
+; $Id$
+name = GFO Advanced Search Form
+description = Module that searches GFO specific content
+package = APW Package
+core = 8.x
+

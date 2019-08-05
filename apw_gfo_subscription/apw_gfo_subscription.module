@@ -1,0 +1,154 @@
+<?php
+
+include_once 'GfoSubscription.class.php';
+
+/**
+ * @file
+ * Use this module to learn about Drupal's menu system,
+ * specifically how local tasks work.
+ */
+
+/**
+ * Implementation of hook_perm().
+ */
+function apw_gfo_subscription_perm() {
+    return array('subscribe to gfo');
+}
+
+/**
+ * Implementation of hook_menu().
+ */
+function apw_gfo_subscription_menu() {
+    //var_dump("sdfdsf");die();
+    $items['user/%/gfo'] = array(
+       'title' => t('GFO Subscription'),
+        'access callback' => 'user_access',
+        'access arguments' => array('subscribe to gfo'),
+        'page callback' => '_gfo_subcription_renderer',
+        'page arguments' => array(2), // Pass 'fruity'.
+        'type' => MENU_LOCAL_TASK,
+        'weight' => 0
+    );
+
+    return $items;
+}
+
+function _gfo_subcription_renderer($type) {
+    drupal_set_title(t("Subscribe/Unsubscribe to <i>GFO</i> subscription"));
+    $output = t('On this page, you can subscribe to GFO or unsubscribe from GFO.');
+// Return the HTML generated from the $form data structure.
+    $output .= drupal_get_form('_gfo_subscription_panel');
+
+    return $output;
+}
+
+/**
+ * Define a form.
+ */
+function _gfo_subscription_panel($add_submit_button = true) {
+    /* start gfo subscription section */
+    $form['gfo_subscription'] = array(
+        '#title' => t('GFO Subscription'),
+        '#type' => 'fieldset',
+        '#weight' => 2,
+        '#collapsible' => TRUE,
+        '#collapsed' => FALSE
+    );
+    $form['gfo_options'] = array(
+        '#type' => 'value',
+        '#value' => _gfo_language_subscription_offer()
+    );
+
+    $title = t('Please select the language version(s) of the newsletter below.  GFO Newsletter will be sent to the email address you provided above.');
+    $extra = '<p>' . t('Please click on the "Create new account" button below to create your account and activate your GFO subscription.') . '</p>';
+    if ($add_submit_button !== false) {
+        $title = t('Please select the language version(s) of the newsletter below. The Newsletter will be sent to the email address you provided above');
+        $extra = '<p  style="margin-bottom:12.0pt;text-align: center;"><span style="text-align:center;font-size:13.0pt;">__________________________________________________________</span></p>
+            <p><strong>' . t('To unsubscribe') . '</strong></p><p>' . t('Please uncheck the appropriate language box above for the version you would like to unsubscribe from.') . '</p>';
+    }
+
+    $form['gfo_subscription']['gfo_choice'] = array(
+        //'#title' => t('I would like to receive GFO by email in the following language(s) (Select all that apply)'),
+        '#title' => $title,
+        '#type' => 'checkboxes',
+        '#default_value' => _get_user_gfo_language_subcription(),
+        '#description' => '<p>' . t('Note: GFO Newsletter is currently available in English and French only. We hope to include Spanish and Russian in the future.') . '</p>' .
+            '<p>' . t('To avoid the risk of your email system treating incoming issues of GFO as spam, you should add gfo-newsletter@aidspan.org to your list of approved email senders. If you are not sure how to do this, speak to your system administrator or technical support person.') . '</p>' .
+        $extra,
+        '#options' => $form['gfo_options']['#value']
+    );
+
+    if ($add_submit_button !== false) {
+        $form['gfo_subscription']['submit'] = array(
+            '#type' => 'submit',
+            '#value' => t('Submit')
+        );
+    }
+
+    $form['#submit'][] = 'gfo_subcription_handler';
+
+    /* end gfo subscription section */
+
+    return $form;
+}
+
+function _gfo_language_subscription_offer() {
+    $sql = "SELECT id, name FROM event_type WHERE is_public = 1 AND group_text = 'GFO'";
+
+    $result = db_query($sql);
+
+    $lang_names = array();
+    while ($data = db_fetch_object($result)) {
+        //if ('English' == $data->name) {
+          //  $lang_names [$data->id] = t($data->name);//t('I would like to receive GFO Newsletter by email.');
+       // } else {
+            $lang_names [$data->id] = t($data->name);
+        //}
+    }
+
+    return $lang_names;
+}
+
+function _get_user_gfo_language_subcription() {
+    global $user;
+
+    $sql = "SELECT event_type_id FROM system_user_has_event_type suset
+        INNER JOIN event_type et ON et.id = suset.event_type_id
+        WHERE et.group_text = 'GFO' AND suset.system_user_id = %d";
+
+    $result = db_query($sql, $user->uid);
+
+    $event_type_ids = array();
+    while ($data = db_fetch_object($result)) {
+        $event_type_ids[] = t($data->event_type_id);
+    }
+
+    return $event_type_ids;
+}
+
+function gfo_subcription_handler($form, &$form_state) {
+
+    //get the selected choices
+    $checked = array_intersect(
+                    array_keys($form_state['values']['gfo_choice']),
+                    array_values($form_state['values']['gfo_choice'])
+    );
+
+    global $user;
+    $uid = $user->uid;
+
+    if (0 == $uid) {
+        $registered_user = user_load(array('name' => $form_state['values']['name']));
+        $uid = $registered_user->uid;
+    }
+//first clear all the previous gfo subscription linkage for this user
+    $sql = sprintf("DELETE from system_user_has_event_type
+        WHERE event_type_id in (%s) AND system_user_id = %d", implode(',', array_keys(_gfo_language_subscription_offer())), $uid);
+    db_query($sql);
+
+    //go ahead to recreate the gfo subcription linkages
+    foreach ($checked as $key => $event_type_id) {
+        $sql = "INSERT INTO system_user_has_event_type (system_user_id, event_type_id, date_created, last_updated) VALUES (%d, %d, now(), now())";
+        db_query($sql, $uid, $event_type_id);
+    }
+}

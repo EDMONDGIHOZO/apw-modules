@@ -1,0 +1,437 @@
+<?php
+
+$GLOBALS['feedbackmessage'] = '';
+
+$GLOBALS['feedbackmessage_en'] = '
+   
+You have been successfully added to our mailing list, keeping you up-to-date with Global Fund latest news. If you wish to unsubscribe from the mailing list, there will be an unsubscribe link at the bottom of the newsletter when you receive it.
+
+Thank you.
+
+-- Aidspan Team';
+$GLOBALS['feedbackmessage_fr'] = ' 
+  
+Vous avez été ajouté à notre liste de diffusion, pour vous tenir à jour avec les dernières nouvelles du Fonds mondial. Si vous souhaitez vous désinscrire de la liste de diffusion, cliquer sur le lien de désabonnement au bas de la newsletter.
+
+Merci.
+
+- Équipe Aidspan';
+
+function apw_gfo_subscribe_form($form, &$form_state) {
+  //  var_dump(apw_gfo_subscribe_language_subcription_by_uid(16109));
+  $form['email_address'] = array(
+    '#type' => 'textfield', //you can find a list of available types in the form api
+    '#size' => 40,
+    '#maxlength' => 40,
+    '#required' => TRUE, //make this field required
+  );
+  $form['email_address']['#default_value'] = 'E-mail address';
+  $form['email_address']['#attributes']['onblur'] = "if (this.value == '') {this.value = 'E-mail address';}";
+  $form['email_address']['#attributes']['onfocus'] = "if (this.value == 'E-mail address') {this.value = '';}";
+  $form['gfo_options'] = array(
+    '#type' => 'value',
+    '#value' => _gfo_language_subscription_offer(),
+    '#required' => TRUE
+  );
+
+
+  $form['gfo_choice'] = array(
+    //'#title' => t('I would like to receive GFO by email in the following language(s) (Select all that apply)'),
+    '#title' => 'Subscribe to',
+    '#type' => 'checkboxes',
+    '#default_value' => _get_user_gfo_language_subcription(),
+    '#options' => $form['gfo_options']['#value'],
+    '#required' => TRUE
+  );
+
+  $form['submit_button'] = array(
+    '#type' => 'submit',
+    '#value' => t('Sign up'),
+  );
+  return $form;
+}
+
+function apw_gfo_subscribe_load_user_by_mail($mail) {
+
+  $query = db_select('users', 'u');
+
+  $uid = $query->fields('u', array('uid'))->condition('u.mail', $mail)->execute()->fetchField();
+
+  if ($uid) {
+
+    return user_load(array('uid' => $uid), TRUE);
+  }
+  else {
+    return FALSE;
+  }
+}
+
+function is_gfo_subscriber_load_user_by_mail($mail) {
+  $query = db_select('users', 'u');
+  $uid = $query->fields('u', array('uid'))->condition('u.mail', $mail)->execute()->fetchField();
+  if ($uid) {
+    return TRUE;
+  }
+  else {
+    return FALSE;
+  }
+}
+
+function apw_gfo_subscribe_form_validate($form, &$form_state) {
+  if (!valid_email_address($form_state['values']['email_address'])) {
+    form_set_error('email_address', t('Enter a valid email address.'));
+  }
+
+  if (empty($form_state['values']['gfo_choice'])) {
+    form_set_error($form['gfo_choice'], t('This field is required.'));
+  }
+
+  if (apw_gfo_subscribe_load_user_by_mail($form_state['values']['email_address'])) {
+    if (apw_gfo_subscribe_get_language_subcription_by_uid(apw_gfo_subscribe_load_user_by_mail($form_state['values']['email_address'])->uid)) {
+      $subscribeto = apw_gfo_subscribe_get_language_subcription_by_uid(apw_gfo_subscribe_load_user_by_mail($form_state['values']['email_address'])->uid);
+      $subscribednewsletters = '';
+      foreach ($subscribeto as &$value) {
+        if ($value = 9)
+          $subscribednewsletters = ' GFO ';
+        if ($value = 10)
+          $subscribednewsletters = $subscribednewsletters . 'and OFM';
+      }
+      $GLOBALS['feedbackmessage'] = t('Thank you for subscribing to our newsletter. Further instructions have been sent to  ') . ' ' . $form_state['values']['email_address'];
+    }
+  } else {
+    $GLOBALS['feedbackmessage'] = t('Thank you for subscribing to our newsletter. Further instructions have been sent to  ') . ' ' . $form_state['values']['email_address'] ;
+  }
+}
+
+function apw_gfo_subscribe_form_submit($form, &$form_state) {
+
+  $password = user_password(8);
+  $mail = $form_state['values']['email_address'];
+  $fields = array(
+    'name' => $form_state['values']['email_address'], //username same as mail strstr($mail, '@', true),
+    'mail' => $mail,
+    'pass' => $password,
+    'status' => 1,
+    'init' => $mail,
+    'roles' => array(
+      DRUPAL_AUTHENTICATED_RID => 'authenticated user',
+    ),
+  );
+  // before save user check if user exists using email 
+  if (is_gfo_subscriber_load_user_by_mail($mail)) {
+    //get user details
+    $account = apw_gfo_subscribe_load_user_by_mail($mail);
+  } else {
+    //create user
+    $account = user_save('', $fields);      
+  }
+
+  $checked = array_intersect(
+      array_keys($form_state['values']['gfo_choice']), array_values($form_state['values']['gfo_choice'])
+  );
+
+  db_set_active('default_no_prefix');
+  foreach ($checked as $key => $event_type_id) {
+
+    db_delete('system_user_has_event_type')->condition('system_user_id', $account->uid)->condition('event_type_id', $event_type_id)->execute();
+
+    db_insert('system_user_has_event_type')
+        ->fields(array(
+          'system_user_id' => $account->uid,
+          'event_type_id' => $event_type_id,
+          'country_id' => 0,
+          'date_created' => array(
+            'timestamp' => date("Y-m-d H:i:s", time()), //<- this
+          ),
+          'last_updated' => array(
+            'timestamp' => date("Y-m-d H:i:s", time()))
+        ))->execute();
+    //if OFM send message in french 
+    if ($event_type_id == 9) {
+      apw_gfo_subscribe_mail('default_from', $mail, 'Thank you for subscribing to our newsletter.', "<br/><br/>" . $GLOBALS['feedbackmessage_en']);
+    }
+    if ($event_type_id == 10) {
+      apw_gfo_subscribe_mail('default_from', $mail, 'Merci pour votre inscription à notre newsletter.', "<br/><br/>" . $GLOBALS['feedbackmessage_fr']);
+    }
+  }
+  
+  db_set_active();
+  
+ $query = db_select('user_detail', 'u');
+ $uid = $query->fields('u', array('user_id'))->condition('u.user_id', $account->uid)->execute()->fetchField();
+ if (!($uid)) {
+  db_insert('user_detail')->fields(array(
+           'user_id' => $account->uid,
+           'full_name'=>$mail,
+            'description' => NULL,
+            'resident_country_id' => 0,
+            'can_use_apw' => 1,
+            'alert_frequency' => 'never'
+        ))->execute();
+  }
+
+  //go ahead to also enable the dataset and reports module for this new user
+  $user_id = db_query("SELECT system_user_id FROM user_module_perm WHERE system_user_id = :system_user_id AND module_id = 3",
+          array(':system_user_id' => $account->uid))->fetchField();
+  if (!($user_id)) {
+    db_query('INSERT INTO user_module_perm (module_id, system_user_id) VALUES (3, :system_user_id)', array(":system_user_id" => $account->uid));  
+  }
+  $user_id = db_query("SELECT system_user_id FROM user_module_perm WHERE system_user_id = :system_user_id AND module_id = 6",
+          array(':system_user_id' => $account->uid))->fetchField();
+  if (!($user_id)) {
+    db_query('INSERT INTO user_module_perm (module_id, system_user_id) VALUES (6, :system_user_id)', array(":system_user_id" => $account->uid));  
+  }
+  
+}
+
+function _get_user_gfo_language_subcription() {
+  db_set_active('default_no_prefix');
+  $query = db_select('system_user_has_event_type', 'suset');
+  $query->innerJoin('event_type', 'et', 'suset.event_type_id = et.id');
+  $query->fields('suset', array('event_type_id'));
+  $query->condition('et.group_text', 'GFO');
+  $query->condition('suset.system_user_id', -1);
+  $result = $query->execute();
+  $event_type_ids = array();
+  while ($data = $result->fetchAssoc()) {
+    $event_type_ids[] = $data['event_type_id'];
+  }
+  db_set_active();
+  return $event_type_ids;
+}
+
+function apw_gfo_subscribe_get_language_subcription_by_uid($uid) {
+  db_set_active('default_no_prefix');
+  $query = db_select('system_user_has_event_type', 'suset');
+  $query->innerJoin('event_type', 'et', 'suset.event_type_id = et.id');
+  $query->addField('suset', 'event_type_id');
+  $query->condition('et.group_text', 'GFO');
+  $query->condition('suset.system_user_id', intval($uid));
+  $result = $query->execute();
+  $event_type_ids = array();
+  while ($data = $result->fetchAssoc()) {
+    $event_type_ids[] = $data['event_type_id'];
+  }
+  db_set_active();
+  return $event_type_ids;
+}
+
+function _gfo_language_subscription_offer() {
+  db_set_active('default_no_prefix');
+  $query = db_select('event_type', 'et');
+  $query->fields('et', array('id', 'name'));
+  $query->condition('et.is_public', 1, '=');
+  $query->condition('et.group_text', 'GFO');
+  $result = $query->execute();
+  $lang_names = array();
+  while ($data = $result->fetchAssoc()) {
+    $lang_names [$data['id']] = ($data['name']);
+  }
+  db_set_active();
+  return $lang_names;
+}
+
+function _gfo_subscribe_cleanup_username($name, $uid = NULL) {
+  // Strip illegal characters.
+  $name = preg_replace('/[^\x{80}-\x{F7} a-zA-Z0-9@_.\'-]/', '', $name);
+
+  // Strip leading and trailing spaces.
+  $name = trim($name);
+
+  // Convert any other series of spaces to a single underscore.
+  $name = preg_replace('/  +/', '_', $name);
+
+  // If there's nothing left use a default.
+  $name = ('' === $name) ? t('user') : $name;
+
+  if (!empty($uid)) {
+    // Put uid on the end of the name.
+    $name = $name . '_' . $uid;
+  }
+
+  function _gfo_subscribe_get_uid($email) {
+    // Iterate to confirm have a unique email.
+    $ui = 0;
+    $i = 0;
+    do {
+      $ui = empty($i) ? 0 : $ui;
+      $ui = db_query_range("SELECT uid from {users} WHERE  mail = :mail", 0, 1, array(':mail' => $new_name))->fetchAssoc();
+      $i++;
+    } while (!empty($ui));
+
+    return $ui;
+  }
+
+  function _gfo_subscribe_unique_username($name, $uid) {
+    // Iterate until we find a unique name.
+    $i = 0;
+    do {
+      $new_name = empty($i) ? $name : $name . '_' . $i;
+      $found = db_query_range("SELECT uid from {users} WHERE uid <> :uid AND name = :name", 0, 1, array(':uid' => $uid, ':name' => $new_name))->fetchAssoc();
+      $i++;
+    } while (!empty($found));
+
+    return $new_name;
+  }
+
+  // Truncate to a reasonable size.
+  $name = (drupal_strlen($name) > (USERNAME_MAX_LENGTH - 10)) ? drupal_substr($name, 0, USERNAME_MAX_LENGTH - 11) : $name;
+  return $name;
+}
+
+function apw_gfo_subscribe_menu() {
+  $items = array();
+  $items['apw_gfo_subscribe/%ctools_js/test/form'] = array(
+    'title' => t('Subscribe to GFO Newsletter'),
+    'page callback' => 'apw_gfo_subscribe_popup',
+    'page arguments' => array(1),
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+
+function apw_gfo_subscribe_popup($js = NULL) {
+  // degrade half-assed to no js
+  if (!$js) {
+    return drupal_get_form('apw_gfo_subscribe_form');
+  }
+  // adelante!
+  ctools_include('modal');
+  ctools_include('ajax');
+  $form_state = array(
+    'title' => t('Subscribe to GFO Newsletter'),
+    'ajax' => TRUE,
+  );
+  $output = ctools_modal_form_wrapper('apw_gfo_subscribe_form', $form_state);
+  if (!empty($form_state['executed'])) {
+    // We'll just overwrite the form output if it was successful.
+    $output = array();
+    $output[] = ctools_modal_command_dismiss(t('Success!'));
+    // If you want to leave a message and links:
+    $output[] = ctools_modal_command_display(t('Successfully subscribed'), '<div class="ctools-modal-apw-gfo-subscribe-modal-style">' . $GLOBALS['feedbackmessage'] .
+        '<br/><br/><br/><a href="/">Close</a>.</div>');
+  }
+  print ajax_render($output);
+  exit;
+}
+
+function apw_gfo_subscribe_block_info() {
+  $blocks = array();
+  $blocks['apw_gfo_subscribe_block'] = array(
+    'info' => t('Newsletter subscribe block'),
+  );
+  $blocks['apw_gfo_subscribe_home_block'] = array(
+    'info' => t('Newsletter subscribe block (Home)'),
+  );
+  return $blocks;
+}
+
+function apw_gfo_subscribe_block_view($delta = '') {
+  $block = array();
+  switch ($delta) {
+    case 'apw_gfo_subscribe_block':
+      $block['subject'] = '';
+      $block['content'] = _apw_gfo_subscribe_content();
+      break;
+    case 'apw_gfo_subscribe_home_block':
+      $block['subject'] = '';
+      $block['content'] = _apw_gfo_subscribe_content();
+      break;
+  }
+
+  return $block;
+}
+
+function apw_gfo_subscribe_mail($from = 'default_from', $to, $subject, $message) {
+  $my_module = 'apw_gfo_subscribe';
+  $my_mail_token = microtime();
+  if ($from == 'default_from') {
+    // Change this to your own default 'from' email address.
+    $from = variable_get('system_mail', 'webmaster@aidspan.org');
+  }
+  $message = array(
+    'id' => $my_module . '_' . $my_mail_token,
+    'to' => $to,
+    'subject' => $subject,
+    'body' => array($message),
+    'headers' => array(
+      'From' => $from,
+      'Sender' => $from,
+      'Return-Path' => $from,
+    ),
+  );
+  $system = drupal_mail_system($my_module, $my_mail_token);
+  $message = $system->format($message);
+  if ($system->mail($message)) {
+    return TRUE;
+  }
+  else {
+    return FALSE;
+  }
+}
+
+function _apw_gfo_subscribe_get_language() {
+  $referer_part_list = explode('/', $_SERVER['HTTP_REFERER']);
+
+  return $referer_part_list[3];
+}
+
+function _apw_gfo_subscribe_content() {
+
+  ctools_include('ajax');
+  ctools_include('modal');
+  ctools_modal_add_js();
+
+  $custom_style = array(
+    'apw-gfo-subscribe-modal-style' => array(
+      'modalSize' => array(
+        'type' => 'fixed',
+        'width' => 360,
+        'height' => 240,
+      ),
+      'animation' => 'fadeIn',
+    ),
+  );
+  drupal_add_js($custom_style, 'setting');
+  drupal_add_js(array(
+    'CToolsModal' => array(
+      'modalSize' => array(
+        'type' => 'fixed',
+        'width' => 360,
+        'height' => 240,
+        'contentBottom' => 800),
+    ),
+      ), 'setting');
+
+//  $output = ctools_modal_text_button(t('Click right here'), 'apw_gfo_subscribe/nojs/test/form', t('Pop me up'));
+  $path = drupal_get_path('module', 'apw_gfo_subscribe');
+  $imageurl = file_create_url($path . '/images/checkboxstyle.png');
+  $output = '
+    
+<style>
+
+.form-item.form-type-checkbox.form-item-gfo-choice-10 label.option,.form-item.form-type-checkbox.form-item-gfo-choice-9 label.option{
+padding-left: 25px;
+height: 20px;
+display: inline-block;
+line-height: 20px;
+background-repeat: no-repeat;
+background-position: 0 0;
+font-size: 14px;
+vertical-align: middle;
+cursor: pointer;
+background-image: url(' . $imageurl . ');
+-webkit-touch-callout: none;
+-webkit-user-select: none;
+-khtml-user-select: none;
+-moz-user-select: none;
+-ms-user-select: none;
+user-select: none;
+}
+    </style>  <div class="content"> ' . ctools_modal_text_button(t("Subscribe to GFO Newsletter"), 'apw_gfo_subscribe/nojs/test/form', t('Subscribe to GFO / OFM newsletter '), 'ctools-modal-apw-gfo-subscribe-modal-style button1 blue');
+  $output .= ' </div><div id="modal-message">&nbsp</div>';
+  ctools_include('plugins');
+  return $output;
+}

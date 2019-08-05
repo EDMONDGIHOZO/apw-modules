@@ -1,0 +1,265 @@
+<?php
+
+// $Id$
+/**
+ * @file
+ * Fetches the statistics about gf grants to various regions and disease component
+ */
+
+function apw_gf_overview_node_view($node, $view_mode, $langcode) {
+
+    if('full' === $view_mode) {
+        if (4 == $node->nid 
+                || 1620 == $node->nid
+                || 1621 == $node->nid
+                || 1622 == $node->nid) {        
+        apw_gf_overview_custom_node_render($node);
+                }
+    }
+}
+
+function apw_gf_overview_custom_node_render($node) {
+
+           //drupal_set_message(t("Users are advised to interpret the data on these pages with caution. The Global Fund recently made changes to the grant data that it provides. We are in the process of updating the information on our pages to reflect these changes."), 'warning');
+            // Pull all the disease components from the db and their respective approval agreement
+            $header = array();
+            $header[] = array('data' => '', 'width' => '30%');
+            $header[] = array('data' => t('Total agreement amount'), 'class' => 'apw-numeric-center');
+            $header[] = array('data' => t('% of total'), 'class' => 'apw-numeric-center');
+            $header[] = array('data' => t('Total disbursed to date'), 'class' => 'apw-numeric-center');
+            $header[] = array('data' => t('% of total'), 'class' => 'apw-numeric-center');
+
+            $disease_funding = _disease_approved_amount();
+            
+            $node->content['disease_section'] = array (
+                  '#markup' => theme('table', array('header' => $header, 'rows' => $disease_funding, 'caption' => t('Grants by Disease'), 'attributes' => array('class' => array('apw_entity_funding_grid')))),
+                  '#weight' => 1,
+                );
+            // Pull all the regions from the db and their respective approval agreement
+            $header = array();
+            $header[] = array('data' => '', 'width' => '30%');
+            $header[] = array('data' => t('Total agreement amount'), 'class' => 'apw-numeric-center');
+            $header[] = array('data' => t('% of total'), 'class' => 'apw-numeric-center');
+            $header[] = array('data' => t('Total disbursed to date'), 'class' => 'apw-numeric-center');
+            $header[] = array('data' => t('% of total'), 'class' => 'apw-numeric-center');
+            
+            $region_funding = _region_approved_amount();
+            
+            $node->content['region_section'] = array (
+                  '#markup' => theme('table', array('header' => $header, 'rows' => $region_funding, 'caption' => t('Grants by Region'), 'attributes' => array('class' => array('apw_entity_funding_grid')))),
+                  '#weight' => 2,
+                );
+}
+
+function _round_approved_amount() {
+    //Approved funding by disease component
+    $sql = "SELECT gfr.id, gfr.name, SUM(gdr.disbursed_amount) disbursed_amount, gfr.display_name
+FROM gf_disbursement_rating gdr
+INNER JOIN gf_grant gg ON gdr.gf_grant_id = gg.id
+INNER JOIN proposal p ON gg.proposal_id = p.id
+INNER JOIN global_fund_round gfr ON p.global_fund_round_id = gfr.id
+GROUP BY gfr.sort_col";
+
+    $result = db_query($sql);
+
+    $round_funding = array();
+
+    $total_approved_amount = _total_approved_amount();
+    $total_agreement_amount = _total_agreement_amount();
+    $total_disbursed_amount = _total_disbursed_amount();
+
+    foreach ($result as $data) {
+        $row = array();
+        $row[] = array('data' => ("SSF" == $data->display_name ? 'Single Stream Funding' : $data->display_name), 'class' => 'apw-name-right-br');
+
+        //get the approved amount for this disease
+        $sql = "SELECT SUM(p.approved_grant_amount) approved_amount
+FROM global_fund_round gfr
+INNER JOIN proposal p ON p.global_fund_round_id = gfr.id
+WHERE gfr.id = " . $data->id;
+        $approved_amt_data = db_fetch_object(db_query($sql));
+        $row[] = array('data' => _format_money_amount($approved_amt_data->approved_amount, 0), 'class' => 'apw-numeric-right-br');
+        $row[] = array('data' => round($approved_amt_data->approved_amount / $total_agreement_amount * 100) . '%', 'class' => 'apw-numeric-right-br');
+
+        //get the grant agreement for this disease
+        $sql = "SELECT SUM(ga.agreement_amount) agreement_amount
+FROM grant_agreement ga
+INNER JOIN gf_grant gg ON ga.gf_grant_id = gg.id
+INNER JOIN proposal p ON gg.proposal_id = p.id
+INNER JOIN global_fund_round gfr ON p.global_fund_round_id = gfr.id
+WHERE gfr.id = " . $data->id;
+        $agreement_amt_data = db_fetch_object(db_query($sql));
+        $row[] = array('data' => _format_money_amount($agreement_amt_data->agreement_amount, 0), 'class' => 'apw-numeric-right-br');
+        $row[] = array('data' => round($agreement_amt_data->agreement_amount / $total_approved_amount * 100) . '%', 'class' => 'apw-numeric-right-br');
+
+        $row[] = array('data' => _format_money_amount($data->disbursed_amount, 0), 'class' => 'apw-numeric-right-br');
+        $row[] = array('data' => round($data->disbursed_amount / $total_disbursed_amount * 100) . '%', 'class' => 'apw-numeric-right-br');
+
+        $round_funding[] = $row;
+    }
+
+    $row = array();
+    $row[] = array('data' => t( 'ALL ROUNDS'), 'class' => 'apw-total-row-br');
+    $row[] = array('data' => _format_money_amount($total_approved_amount, 0), 'class' => 'apw-total-row-br apw-numeric');
+    $row[] = array('data' => '100%', 'class' => 'apw-total-row-br apw-numeric');
+    $row[] = array('data' => _format_money_amount($total_agreement_amount, 0), 'class' => 'apw-total-row-br apw-numeric');
+    $row[] = array('data' => '100%', 'class' => 'apw-total-row-br apw-numeric');
+    $row[] = array('data' => _format_money_amount($total_disbursed_amount, 0), 'class' => 'apw-total-row-br apw-numeric');
+    $row[] = array('data' => '100%', 'class' => 'apw-total-row-br apw-numeric');
+    $round_funding[] = $row;
+
+    return $round_funding;
+}
+
+function _disease_approved_amount() {
+    //Approved funding by disease component
+    $sql = "SELECT dc.id, dc.name, SUM(gdr.disbursed_amount) disbursed_amount
+FROM gf_disbursement_rating gdr
+INNER JOIN gf_grant gg ON gdr.gf_grant_id = gg.id
+INNER JOIN disease_component dc ON gg.disease_component_id = dc.id
+GROUP BY dc.name
+ORDER BY disbursed_amount DESC";
+
+    $result = db_query($sql);
+
+    $disease_funding = array();
+
+    $total_approved_amount = _total_approved_amount();
+    $total_agreement_amount = _total_agreement_amount();
+    $total_disbursed_amount = _total_disbursed_amount();
+
+    foreach ($result as $data) {
+        $row = array();
+        $row[] = array('data' => $data->name, 'class' => 'apw-name-right-br');
+
+        //get the grant agreement for this disease
+        $sql = "SELECT SUM(ga.agreement_amount) agreement_amount
+FROM grant_agreement ga
+INNER JOIN gf_grant gg ON ga.gf_grant_id = gg.id
+INNER JOIN disease_component dc ON gg.disease_component_id = dc.id
+WHERE dc.id = " . $data->id;
+        $agreement_amt_data = db_query($sql)->fetchField();
+        $row[] = array('data' => _format_money_amount($agreement_amt_data, 0), 'class' => 'apw-numeric-right-br');
+        $row[] = array('data' => round($agreement_amt_data / $total_agreement_amount * 100) . '%', 'class' => 'apw-numeric-right-br');
+
+        $row[] = array('data' => _format_money_amount($data->disbursed_amount, 0), 'class' => 'apw-numeric-right-br');
+        $row[] = array('data' => round($data->disbursed_amount / $total_disbursed_amount * 100) . '%', 'class' => 'apw-numeric-right-br');
+
+        $disease_funding[] = $row;
+    }
+
+    $row = array();
+    $row[] = array('data' => t('ALL DISEASES'), 'class' => 'apw-total-row-br');
+//    $row[] = array('data' => _format_money_amount($total_approved_amount, 0), 'class' => 'apw-total-row-br apw-numeric');
+//    $row[] = array('data' => '100%', 'class' => 'apw-total-row-br apw-numeric');
+    $row[] = array('data' => _format_money_amount($total_agreement_amount, 0), 'class' => 'apw-total-row-br apw-numeric');
+    $row[] = array('data' => '100%', 'class' => 'apw-total-row-br apw-numeric');
+    $row[] = array('data' => _format_money_amount($total_disbursed_amount, 0), 'class' => 'apw-total-row-br apw-numeric');
+    $row[] = array('data' => '100%', 'class' => 'apw-total-row-br apw-numeric');
+    $disease_funding[] = $row;
+
+    return $disease_funding;
+}
+
+function _region_approved_amount() {
+    $sql = "SELECT r.id, r.name, SUM(gdr.disbursed_amount) disbursed_amount
+FROM gf_disbursement_rating gdr
+INNER JOIN gf_grant gg ON gdr.gf_grant_id = gg.id
+INNER JOIN country c ON gg.country_id = c.id
+INNER JOIN region r ON c.region_id = r.id
+GROUP BY r.name
+ORDER BY disbursed_amount DESC";
+
+    $result = db_query($sql);
+
+    $region_funding = array();
+
+    $total_approved_amount = _total_approved_amount();
+    $total_agreement_amount = _total_agreement_amount();
+    $total_disbursed_amount = _total_disbursed_amount();
+
+    foreach ($result as $data) {
+        $row = array();
+        $row[] = array('data' => $data->name, 'class' => 'apw-name-right-br');
+
+        //get the grant agreement for this disease
+        $sql = "SELECT SUM(ga.agreement_amount) agreement_amount
+FROM grant_agreement ga
+INNER JOIN gf_grant gg ON ga.gf_grant_id = gg.id
+INNER JOIN country c ON gg.country_id = c.id
+INNER JOIN region r ON c.region_id = r.id
+WHERE r.id = " . $data->id;
+        $agreement_amt_data = db_query($sql)->fetchField();
+        $row[] = array('data' => _format_money_amount($agreement_amt_data, 0), 'class' => 'apw-numeric-right-br');
+        $row[] = array('data' => round($agreement_amt_data / $total_approved_amount * 100) . '%', 'class' => 'apw-numeric-right-br');
+
+        $row[] = array('data' => _format_money_amount($data->disbursed_amount, 0), 'class' => 'apw-numeric-right-br');
+        $row[] = array('data' => round($data->disbursed_amount / $total_disbursed_amount * 100) . '%', 'class' => 'apw-numeric-right-br');
+
+        $region_funding[] = $row;
+    }
+
+    $row = array();
+    $row[] = array('data' => t('ALL REGIONS'), 'class' => 'apw-total-row-br');
+    //$row[] = array('data' => _format_money_amount($total_approved_amount, 0), 'class' => 'apw-total-row-br apw-numeric');
+    //$row[] = array('data' => '100%', 'class' => 'apw-total-row-br apw-numeric');
+    $row[] = array('data' => _format_money_amount($total_agreement_amount, 0), 'class' => 'apw-total-row-br apw-numeric');
+    $row[] = array('data' => '100%', 'class' => 'apw-total-row-br apw-numeric');
+    $row[] = array('data' => _format_money_amount($total_disbursed_amount, 0), 'class' => 'apw-total-row-br apw-numeric');
+    $row[] = array('data' => '100%', 'class' => 'apw-total-row-br apw-numeric');
+    $region_funding[] = $row;
+
+    return $region_funding;
+}
+
+function _total_approved_amount($country_id = null) {
+
+    $sql = "SELECT SUM(p.approved_grant_amount) approved_amount FROM proposal p ";
+    if (null != $country_id) {
+        $sql .= ' INNER JOIN applicant a ON p.applicant_id = a.id
+            INNER JOIN country c ON a.country_id = c.id
+            WHERE c.id = ' . $country_id;
+    }
+
+    $result = db_query($sql);
+
+    return $result->fetchField();
+}
+
+function _total_agreement_amount($country_id = null) {
+
+    $sql = "SELECT SUM(ga.agreement_amount) agreement_amount FROM grant_agreement ga";
+    if (null != $country_id) {
+        $sql .= ' INNER JOIN gf_grant gg ON ga.gf_grant_id = gg.id
+            WHERE gg.country_id = ' . $country_id;
+    }
+
+    $result = db_query($sql);
+
+    return $result->fetchField();
+}
+
+function _total_disbursed_amount($country_id = null) {
+
+    $sql = "SELECT SUM(gdr.disbursed_amount) disbursed_amount FROM gf_disbursement_rating gdr";
+    if (null != $country_id) {
+        $sql .= ' INNER JOIN gf_grant gg ON gdr.gf_grant_id = gg.id
+            WHERE gg.country_id = ' . $country_id;
+    }
+
+    $result = db_query($sql);
+
+    return $result->fetchField();
+}
+
+function _format_money_amount($amount, $decimal_point = 2) {
+    // strip any commas
+    $amount = (0 + STR_REPLACE(',', '', $amount));
+
+    // make sure it's a number...
+    if (!is_numeric($amount)) {
+        return 'Value ' . amount . ' is not a numeric';
+    }
+
+    return '$' . number_format(($amount / 1000000), $decimal_point) . ' m.';
+}

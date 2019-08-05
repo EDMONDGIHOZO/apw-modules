@@ -1,0 +1,5 @@
+; $Id$
+name = Manage the GFO subscription process
+description = Module that will be delegated with managing gfo subscription
+package = APW Package
+core = 6.x

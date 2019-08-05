@@ -1,0 +1,13 @@
+name = Aidspan data migrator 
+description = Cron based Migration of Aidspan Publications GFO articles , GFO Issues and News
+dependencies[] = migrate
+dependencies[] = migrate_drupal_ui
+dependencies[] = migrate_d2d
+dependencies[] =taxonomy
+dependencies[] =image
+dependencies[] =list
+dependencies[] =number
+dependencies[] = node_reference
+files[] = AidspanMigrationMappers.inc
+package = APW Package
+core = 8.x

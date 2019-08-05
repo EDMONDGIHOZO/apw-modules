@@ -1,0 +1,5 @@
+; $Id$
+name = Inaccessible Content
+description = Module that will show inaccessible content
+package = APW Package
+core = 7.x

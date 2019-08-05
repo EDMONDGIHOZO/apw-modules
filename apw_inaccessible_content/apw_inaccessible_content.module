@@ -1,0 +1,102 @@
+<?php
+
+function apw_inaccessible_content_permission() {
+    return array('inaccessible related news' => array(
+        'title' => t('inaccessible related news'),
+        'description' => t('View all the related news nodes')
+    ), 
+        'inaccessible unpublished gfo article' => array(
+        'title' => t('inaccessible unpublished gfo article'),
+        'description' => t('View all the unpublished gfo articles nodes')
+    ), 
+        'inaccessible publication' => array(
+        'title' => t('inaccessible publication'),
+        'description' => t('View all the publication nodes')
+    ), 
+        'inaccessible archived gfo live article' => array(
+        'title' => t('inaccessible archived gfo live article'),
+        'description' => t('View all the archived gfo articles nodes')
+    ));
+}
+
+function apw_inaccessible_content_menu() {
+    $items['inaccessible'] = array(
+        'title' => 'Inaccesible Content',
+        'page callback' => 'inaccessible_content_landing',
+        'access callback' => 'inaccessible_content_user_access',
+        'access callback' => TRUE,
+        'type' => MENU_NORMAL_ITEM,
+    );
+
+    $items['inaccessible/unpublished_gfo_article'] = array(
+        'title' => 'Unpublished GFO Articles',
+        'page callback' => 'inaccessible_unpublished_gfo_article_listing',
+        'access callback' => 'user_access',
+        'access arguments' => array('inaccessible unpublished gfo article'),
+    );
+
+    $items['inaccessible/related_news_item'] = array(
+        'title' => 'Related News',
+        'page callback' => 'inaccessible_related_news_item_listing',
+        'access callback' => 'user_access',
+        'access arguments' => array('inaccessible related news'),
+    );
+
+    $items['inaccessible/publication'] = array(
+        'title' => 'Publications',
+        'page callback' => 'inaccessible_publication_listing',
+        'access callback' => 'user_access',
+        'access arguments' => array('inaccessible publication'),
+    );
+
+    $items['inaccessible/archived_gfo_live_article'] = array(
+        'title' => 'Archived GFO Live Articles',
+        'page callback' => 'inaccessible_archived_gfo_live_article_listing',
+        'access callback' => 'user_access',
+        'access arguments' => array('inaccessible archived gfo live article'),
+    );
+
+    return $items;
+}
+
+function inaccessible_content_user_access() {
+    return user_access('inaccessible unpublished gfo article') ||
+    user_access('inaccessible publication') ||
+    user_access('inaccessible related news') ||
+    user_access('inaccessible archived gfo live article');
+}
+
+function inaccessible_content_landing() {
+    $description = '';
+
+    if(user_access('inaccessible unpublished gfo article')) {
+        $description .= '<p>' . l('Unpublished GFO Articles', 'inaccessible/unpublished_gfo_article') . '</p>';
+    }
+    if(user_access('inaccessible publication')) {
+        $description .= '<p>' . l('Publications', 'inaccessible/publication') . '</p>';
+    }
+    if(user_access('inaccessible related news')) {
+        $description .= '<p>' . l('Related News', 'inaccessible/related_news_item') . '</p>';
+    }
+    if(user_access('inaccessible archived gfo live article')) {
+        $description .= '<p>' . l('Archived GFO Live Articles', 'inaccessible/archived_gfo_live_article') . '</p>';
+    }
+
+    return $description;
+}
+
+function inaccessible_unpublished_gfo_article_listing() {
+    return views_embed_view('unpublished_gfo_article');
+}
+
+function inaccessible_related_news_item_listing() {
+    return views_embed_view('inaccessible_related_news');
+}
+
+function inaccessible_publication_listing() {
+    return views_embed_view('inaccessible_publication');
+}
+
+function inaccessible_archived_gfo_live_article_listing() {
+    return views_embed_view('archived_gfo_live_article');
+}

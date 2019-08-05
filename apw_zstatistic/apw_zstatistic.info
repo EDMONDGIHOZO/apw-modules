@@ -1,0 +1,5 @@
+; $Id$
+name = APW Statistic
+description = Module to handle statistic
+package = APW Package
+core = 7.x

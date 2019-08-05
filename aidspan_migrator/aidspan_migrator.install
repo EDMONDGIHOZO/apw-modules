@@ -1,0 +1,20 @@
+<?php
+
+/**
+ * Implements hook_install().
+ */
+function aidspan_migrator_install() {
+ 
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function aidspan_migrator_uninstall() {
+    /**
+ *  
+ * TODO: Enter file description here.
+ */
+}
+
+ 

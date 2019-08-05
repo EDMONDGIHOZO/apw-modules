@@ -1,0 +1,360 @@
+<?php
+
+include_once 'ProfileManagement.class.php';
+
+
+function apw_profile_management_form_user_register_alter() {
+    drupal_set_title(t('User Account'));
+}
+
+function apw_profile_management_form_user_login_alter() {
+    drupal_set_title(t('User Account'));
+}
+
+function apw_profile_management_form_user_pass_alter() {
+    drupal_set_title(t('User Account'));
+}
+
+function apw_profile_management_menu() {
+    $items['unsubscribe'] = array(
+        'page callback' => '_unsubscribe_account',
+        'page arguments' => array(1, 3),
+        'access callback' => TRUE,
+        'type' => MENU_CALLBACK,
+    );
+
+    return $items;
+}
+
+function _unsubscribe_account($event_type_id, $email_hash) {
+
+    if (isset($email_hash)) {
+        $sql = "SELECT system_user_id, event_type_id from
+web_users wu
+INNER JOIN system_user_has_event_type st ON st.system_user_id = wu.uid
+WHERE md5(wu.mail) = '%s' AND st.event_type_id = %d";
+
+        //remove the last 3 digit from the hash since they are just paddings
+        $email_hash = substr($email_hash, 0, -3);
+        
+        $user = db_fetch_object(db_query($sql, $email_hash, $event_type_id));
+
+        if ($user->system_user_id) {
+            //unsubscribe user from newsletter
+            $sql = "DELETE from system_user_has_event_type WHERE event_type_id = %d AND system_user_id = %d";
+            $result = db_query($sql, $event_type_id, $user->system_user_id);
+
+            drupal_set_message(t("You have successfully unsubscribed from GFO newsletter."), "status");
+        } else {
+            drupal_set_message(t("Invalid identification hash supplied or you are currently not subscribed to the newsletter"), "error");
+        }
+    } else {
+        //halt
+        drupal_access_denied();
+    }
+
+    return t("");
+}
+
+function apw_profile_management_user($op, &$edit, &$account, $category = NULL) {
+    if ('view' === $op) {
+        $pic = $account->content['user_picture']['#value'];
+
+        $content = theme('welcome_profile_introduction', $account->uid);
+
+        $account->content['user_picture']['#value'] = $content . $pic;
+    }
+    if ('delete' === $op) {
+        $sql = "DELETE FROM {user_detail} WHERE user_id = %d";
+        db_query($sql, $account->uid);
+
+        $sql = "DELETE from system_user_has_event_type WHERE system_user_id = %d";
+        db_query($sql, $account->uid);
+    }
+}
+
+function apw_profile_management_menu_alter(&$items) {
+    $items['node']['page callback'] = 'drupal_not_found';
+    
+    //drupal_set_message('Menu Items: <pre>'.print_r($items, TRUE).'</pre>');
+//    $items['user/%user/track']['title'] = "Track Your Posts";
+    $items['user/%user/view']['title'] = t("Welcome");
+    $items['user/%user_category/edit']['title'] = t("Create/Edit Profile");
+}
+
+function apw_profile_management_form_alter(&$form, &$form_state, $form_id) {
+// This code gets called for every form Drupal builds; use an if statement
+// to respond only to the user profile form.
+
+    if ($form_id == 'user_profile_form') {
+        //var_dump($form);
+        //remove the comment notify section and the personal user contact option, they look convulted to me
+        unset($form['comment_notify_settings']);
+        unset($form['contact']);
+        unset($form['picture']);
+        unset($form['locale']);
+
+        $form['intro'] = array(
+            '#type' => 'markup',
+            '#weight' => -11,
+            '#value' => theme('auth_profile_introduction')
+        );
+
+        //inform the user that currently the site and emails are only sent in English
+        $desc = $form['locale']['language']['#description'];
+        $form['locale']['language']['#description'] = $desc .
+                t('<br/><u>Note:</u> Content and email notifications in French, Spanish and Russian are not currently offered but will be at some point in the future.');
+
+        //instatiate the profile management class that has utility functions required for this form
+        $profileManagement = new ProfileManagement();
+
+        //get this user's extended details
+        $user_detail = _get_user_extended_detail();
+
+        _add_common_profile_elements($form, $user_detail);
+
+        /* start membership section */
+        $form['membership'] = array(
+            '#title' => t('Membership Information'),
+            '#type' => 'fieldset',
+            '#weight' => 3,
+            '#collapsible' => TRUE,
+            '#collapsed' => FALSE
+        );
+        $form['membership_options'] = array(
+            '#type' => 'value',
+            '#value' => $profileManagement->membership_titles()
+        );
+        $form['membership']['membership_choice'] = array(
+            '#title' => t('My memberships (Select one)'),
+            '#type' => 'checkboxes',
+            '#default_value' => $profileManagement->get_user_membership(),
+            //'#description' => t('Please select your favorite color.'),
+            '#options' => $form['membership_options']['#value']
+        );
+        /* end membership section */
+
+        /* start profession section */
+        $form['profession'] = array(
+            '#title' => t('Profession Information'),
+            '#type' => 'fieldset',
+            '#weight' => 4,
+            '#collapsible' => TRUE,
+            '#collapsed' => FALSE
+        );
+        $form['profession_options'] = array(
+            '#type' => 'value',
+            '#value' => $profileManagement->profession_titles()
+        );
+        $form['profession']['profession_choice'] = array(
+            '#title' => t('My work (Select all that apply)'),
+            '#type' => 'checkboxes',
+            '#default_value' => $profileManagement->get_user_profession(),
+            //'#description' => t('Please select your favorite color.'),
+            '#options' => $form['profession_options']['#value']
+        );
+        /* end profession section */
+
+        /* start work with gf section */
+        $form['gf_work'] = array(
+            '#title' => t('Interaction with Global Fund'),
+            '#type' => 'fieldset',
+            '#weight' => 5,
+            '#collapsible' => TRUE,
+            '#collapsed' => FALSE
+        );
+        $form['gf_work_options'] = array(
+            '#type' => 'value',
+            '#value' => $profileManagement->gf_work_titles()
+        );
+        $form['gf_work']['gf_work_choice'] = array(
+            '#title' => t('My work and the Global Fund (Select all that apply)'),
+            '#type' => 'checkboxes',
+            '#default_value' => $profileManagement->get_user_gf_work(),
+            //'#description' => t('Please select your favorite color.'),
+            '#options' => $form['gf_work_options']['#value']
+        );
+        /* end work with gf section */
+
+        $form['#validate'][] = 'user_membership_validate';
+
+        $form['#submit'][] = 'user_membership_handler';
+        $form['#submit'][] = 'user_profession_handler';
+        $form['#submit'][] = 'user_gf_work_handler';
+        $form['#submit'][] = 'user_detail_handler';
+    } else if ('user_register' == $form_id) {
+
+        $form['intro'] = array(
+            '#type' => 'markup',
+            '#weight' => -11,
+            '#value' => theme('profile_management_introduction', $form_id)
+        );
+
+        /* start gfo subscription section */
+        $gfo_panel = _gfo_subscription_panel(false); //get the gfo subscription panel
+
+        $form = array_merge($form, $gfo_panel);
+        /* end gfo subscription section */
+
+        _add_common_profile_elements($form);
+
+        $form['#submit'][] = 'user_registration_handler';
+    }
+}
+
+function apw_profile_management_theme() {
+    return array(
+        'profile_management_introduction' => array('arguments' => array('form_type' => NULL)),
+        'welcome_profile_introduction' => array('arguments' => array('user_id' => NULL)),
+        'auth_profile_introduction' => array('arguments' => NULL),
+    );
+}
+
+function _add_common_profile_elements(&$form, $user_detail = null) {
+    /* start additional account information section */
+    $full_name = null;
+    $resident_country_id = 0;
+
+    if ($user_detail) {
+        $full_name = $user_detail->full_name;
+        $resident_country_id = $user_detail->resident_country_id;
+    }
+
+    $form['account']['full_name'] = array(
+        '#type' => 'textfield',
+        '#title' => t('Full Name'),
+        '#maxlength' => 64,
+        '#default_value' => $full_name,
+        '#description' => t('Please provide your full name.'),
+        '#required' => false
+    );
+    $form['resident_country_options'] = array(
+        '#type' => 'value',
+        '#value' => _resident_country_name()
+    );
+    $form['account']['country'] = array(
+        '#title' => t('Country'),
+        '#type' => 'select',
+        '#default_value' => $resident_country_id,
+        '#description' => t('Select your country of residence.'),
+        '#options' => $form['resident_country_options']['#value']
+    );
+    /* end additional account information section */
+}
+
+function user_registration_handler($form, &$form_state) {
+    $registered_user = user_load(array('name' => $form_state['values']['name']));
+
+    $sql = "INSERT INTO {user_detail} (resident_country_id, full_name, user_id, can_use_apw, alert_frequency) VALUES (%d, '%s', %d, false, 'never')";
+    db_query($sql,
+            $form_state['values']['country'],
+            $form_state['values']['full_name'],
+            $registered_user->uid);
+}
+
+function user_detail_handler($form, &$form_state) {
+
+    global $user;
+
+    $sql = "UPDATE {user_detail} SET resident_country_id = %d, full_name = '%s' WHERE user_id = %d";
+    db_query($sql,
+            $form_state['values']['country'],
+            $form_state['values']['full_name'],
+            $user->uid);
+}
+
+function user_profession_handler($form, &$form_state) {
+
+    $choices = $form_state['values']['profession_choice'];
+    //get the selected choices
+    $checked = array_intersect(
+                    array_keys($form_state['values']['profession_choice']),
+                    array_values($form_state['values']['profession_choice'])
+    );
+    //first clear all the previous profession linkage for this user
+    global $user;
+    $sql = sprintf("DELETE from {user_profession} WHERE user_id = %d", $user->uid);
+    db_query($sql);
+
+    //go ahead to recreate the profession linkages
+    foreach ($checked as $key => $profession_id) {
+        $sql = "INSERT INTO {user_profession} (user_id, profession_id) VALUES (%d, %d)";
+        db_query($sql, $user->uid, $profession_id);
+    }
+}
+
+function user_gf_work_handler($form, &$form_state) {
+
+    $choices = $form_state['values']['gf_work_choice'];
+    //get the selected choices
+    $checked = array_intersect(
+                    array_keys($form_state['values']['gf_work_choice']),
+                    array_values($form_state['values']['gf_work_choice'])
+    );
+    //first clear all the previous gf work linkage for this user
+    global $user;
+    $sql = sprintf("DELETE from {user_gf_work} WHERE user_id = %d", $user->uid);
+    db_query($sql);
+
+    //go ahead to recreate the gf_work linkages
+    foreach ($checked as $key => $gf_work_id) {
+        $sql = "INSERT INTO {user_gf_work} (user_id, gf_work_id) VALUES (%d, %d)";
+        db_query($sql, $user->uid, $gf_work_id);
+    }
+}
+
+function user_membership_handler($form, &$form_state) {
+
+    $choices = $form_state['values']['membership_choice'];
+    //get the selected choices
+    $checked = array_intersect(
+                    array_keys($form_state['values']['membership_choice']),
+                    array_values($form_state['values']['membership_choice'])
+    );
+
+    //first clear all the previous membership linkage for this user
+    global $user;
+    $sql = sprintf("DELETE from {user_membership} WHERE user_id = %d", $user->uid);
+    db_query($sql);
+
+    //go ahead to recreate the membership linkages
+    foreach ($checked as $key => $membership_id) {
+        $sql = "INSERT INTO {user_membership} (user_id, membership_id) VALUES (%d, %d)";
+        db_query($sql, $user->uid, $membership_id);
+    }
+}
+
+function user_membership_validate($form, $form_state) {
+    $choices = $form_state['values']['membership_choice'];
+    //get the selected choices
+    $checked = array_intersect(
+                    array_keys($form_state['values']['membership_choice']),
+                    array_values($form_state['values']['membership_choice'])
+    );
+    //check to see if the user selected multiple memberships
+    if (sizeof($checked) > 1) {
+        form_set_error('membership_choice', t('Please select only one membership type.'));
+    }
+}
+
+function _get_user_extended_detail() {
+    global $user;
+
+    $sql = "SELECT resident_country_id, full_name FROM {user_detail} WHERE user_id = %d";
+
+    return db_fetch_object(db_query($sql, $user->uid));
+}
+
+function _resident_country_name() {
+    $sql = "SELECT id, name FROM {resident_country}";
+
+    $result = db_query($sql);
+
+    $names = array();
+    $names [0] = 'Select country';
+    while ($data = db_fetch_object($result)) {
+        $names [$data->id] = t($data->name);
+    }
+
+    return $names;
+}

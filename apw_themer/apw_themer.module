@@ -1,0 +1,103 @@
+<?php
+
+// $Id$
+
+/*
+ * Implementation of hook_theme().
+ */
+
+function apw_themer_theme() {
+    return array(
+        'apw_gfo_issue_article_listing_block' => array('variables' => array(), 'template' => '/template/gfo-issue-article-block'),
+    );
+}
+
+function apw_themer_block_view($delta = '') {
+    $block = array();
+    
+    switch ($delta) {
+        case 'newsletter_article_listing':
+            $block['content'] = array(
+            '#theme' => 'apw_gfo_issue_article_listing_block',
+            '#variables' => array(),
+            '#title' => ' ',
+      );
+      break;
+    }
+
+    return $block;
+}
+function apw_themer_block_info() {
+    $blocks = array();
+    
+    $blocks['newsletter_article_listing'] = array(
+    'info' => t('GFO Issue Articles'),
+     );
+
+    return $blocks;
+}
+
+function apw_themer_block($op = 'list', $delta = 0, $edit = array()) {
+    switch ($op) {
+        case 'list':
+            return array(
+                0 => array(
+                    'info' => t('Introducing Aidspan Block'),
+                ),
+                1 => array(
+                    'info' => t('Google GF Search'),
+                ),
+                2 => array(
+                    'info' => t('Rotating Banner'),
+                ),
+                3 => array(
+                    'info' => t('Footer Block'),
+                ),
+                4 => array(
+                    'info' => t('GFO Issue Articles'),
+                ),
+                5 => array(
+                    'info' => t('Aidspan Services'),
+                ),
+            );
+        case 'view':
+            $subject = '';
+            $content = '';
+            switch ($delta) {
+                case 0:
+                    $content = theme('apw_introducing_aidspan_block');
+                    //$subject = t('Introducing Aidspan Block');
+                    break;
+                case 1:
+                    $content = theme('apw_google_gf_search_block');
+                    //$subject = t('Introducing Aidspan Block');
+                    break;
+                case 2:
+                    $content = theme('apw_rotating_banner_block');
+                    //$subject = t('Introducing Aidspan Block');
+                    break;
+                case 3:
+                    $content = theme('apw_footer_block');
+                    //$subject = t('Introducing Aidspan Block');
+                    break;
+                case 4:
+                    $content = theme('apw_gfo_issue_article_listing_block');
+                    //$subject = t('Introducing Aidspan Block');
+                    break;
+                case 5:
+                    $content = theme('apw_aidspan_service_block');
+                    //$subject = t('Introducing Aidspan Block');
+                    break;
+            }
+            if (
+                    $subject || $content) {
+                return array(
+                    'subject' => $subject,
+                    'content' => $content,
+                );
+            }
+            break;
+    }
+}
+
+?>

@@ -1,0 +1,89 @@
+<?php
+
+include_once 'CountryGrantDetailsListing.class.php';
+
+function apw_grants_overview_rating_map_node_view($node, $view_mode, $langcode) {
+
+  if ('full' === $view_mode) {
+
+    if ((5 == $node->nid)||(1623== $node->nid)||(1624== $node->nid)||(1625== $node->nid)) {
+ 
+    //  drupal_add_js('sites/all/themes/apw_sena/js/jvectormap/jquery-1.7.2.js');
+      drupal_add_js('sites/all/themes/apw_sena/js/jvectormap/jquery-jvectormap-2.0.1.min.js', 'file');
+      drupal_add_js('sites/all/themes/apw_sena/js/jvectormap/jquery-jvectormap-world-mill-en.js', 'file');
+      drupal_add_css('sites/all/themes/apw_sena/js/jvectormap/jquery-jvectormap-2.0.1.css', 'file');
+      apw_grants_overview_rating_map_custom_node_render($node);
+      drupal_add_js('sites/all/modules/custom/apw_grants_overview_rating_map/apw_grants_overview_rating_map.js', 'file');
+    }
+  }
+}
+
+function apw_grants_overview_rating_map_custom_node_render($node) {
+
+  //drupal_set_message(t("Users are advised to interpret the data on these pages with caution. The Global Fund recently made changes to the grant data that it provides. We are in the process of updating the information on our pages to reflect these changes."), 'warning');
+// Pull all the countries from the db and their respective agreement amounts
+  $country_listing = new CountryGrantDetailsListing();
+
+  $country_grant_info = $country_listing->country_grant_amount('2010-01-01', date('Y-m-d'));
+
+$footnotes="*Clicking on a country in the map above will take you to the page for that country.<br>"
+."*Countries in white are not Global Fund grant implementers.<br>"
+."*Hovering over an implementing country on the map, reveals the grant portfolio information for that country.";
+
+  $map_data = ' 
+<div class="title"><Strong>Countries of the world, showing average Global Fund rating since January 2010</Strong></div>
+<div class="grants_by_country_map" style="width: 938px;
+height: 380px;
+margin-left: 5px;
+margin-right: 5px;
+padding: 3px;
+background-color: rgb(169, 175, 180);
+margin-bottom: 15px;
+border-radius: 3px;">
+    <div id="map1" style="width: 630px;height:350px;display:inline-block">&nbsp;</div>
+      <div id="countrygrantdetails" style="  
+padding: 10px;
+width: 265px;
+height: 346px;
+margin: 5px;
+visibility:visible;
+float: right;
+font-weight: 700;
+color: white;
+font-size: 16px;
+border-top-left-radius: 4px;
+border-top-right-radius: 4px;
+border-bottom-right-radius: 4px;
+border-bottom-left-radius: 4px;
+transition-property: margin-bottom, opacity, visibility;
+    transition-duration: 1s, 1s, 0s;
+    transition-timing-function: ease-in-out, ease-in-out, linear;
+    margin-bottom: 0;
+    opacity: 1;
+z-index: 10;
+background:#55738D;
+ font-family: "Open Sans",Arial,Helvetica,sans-serif;
+">
+  
+                         Hover over a country to view more details about the grant or click to open the country page <br><br><div class="legend2"><div id="pra1"><div style=" 
+                         display: block; height: 12px; border-radius: 3px; width: 12px; background-color: #41A317; float: left; 
+                         margin-right: 5px;"></div>A1  <b>Exceeds expectations</b></div><div id="pra"> 
+                         <div style="display: block;height: 12px;border-radius: 3px;width: 12px;background-color: #ADA96E;float: left; 
+                         margin-right: 5px;"></div>A <b>Good performance</b></div><div id="pra2"><div style="display: block;height: 12px; 
+                        border-radius: 3px;width: 12px;background-color: #A9CF38;float: left;margin-right: 5px;"></div>A2 <b>Meets expectations</b></div><div id="prb1"> 
+                         <div style="display: block;height: 12px;border-radius: 3px;width: 12px;background-color:#F4ED12;float: left;margin-right: 5px;"></div>B1 <b>Adequate</b></div><div id="prb2"> 
+                         <div style="display: block;height: 12px;border-radius: 3px;width: 12px;background-color: #FFAA22;float: left; 
+                        margin-right: 5px;"></div>B2 <b>Inadequate but potential <br>&nbsp;&nbsp;&nbsp;&nbsp; demonstrated</b></div><div id="prc"><div style="display: block;height: 12px; 
+                        border-radius: 3px;width: 12px;background-color:#CC2222;float: left;margin-right: 5px;"></div> C <b>Unacceptable</b> 
+<div id="prc"><div style="display: block;height: 12px; 
+                        border-radius: 3px;width: 12px;background-color:#6B6E73;float: left;margin-right: 5px;"></div> N/A <b>  Not available</b></div>
+             </div> 
+</div></div>
+             </div> 
+   '; //theme('world_map_gf_implementers', array('map_data' => $country_grant_info[1], 'legend_data' => $country_grant_info[2]));
+  drupal_add_js('' . $country_grant_info[0] . '', 'inline');
+  $node->content['country_portfolio_section_1'] = array(
+    '#markup' => $map_data.$footnotes,
+    '#weight' => 2,
+  );
+}

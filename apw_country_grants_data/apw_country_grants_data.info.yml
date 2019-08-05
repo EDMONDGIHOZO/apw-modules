@@ -1,0 +1,5 @@
+; $Id$
+name = Country Grants Data
+description = Module delegated with providing extra information on grants at the country level.
+package = APW Package
+core = 8.x

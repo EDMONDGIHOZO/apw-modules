@@ -1,0 +1,6 @@
+ ; $Id$
+name = grants map 
+description = grants map 
+package = APW Package
+core = 7.x
+

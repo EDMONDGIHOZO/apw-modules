@@ -1,0 +1,5 @@
+; $Id$
+name = APW main themer module
+description = Module delegated with the theming of the website
+package = APW Package
+core = 7.x

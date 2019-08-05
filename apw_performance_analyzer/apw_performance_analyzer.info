@@ -1,0 +1,5 @@
+; $Id$
+name = APW performance analyzer
+description = Module that will be used to compare and analyze performance of grants which meet certain criteria.
+package = APW Package
+core = 7.x

@@ -1,0 +1,5 @@
+; $Id$
+name = Manage the user profile information
+description = Module that will be delegated with handling the profile management for user of the web platform.
+package = APW Package
+core = 6.x
